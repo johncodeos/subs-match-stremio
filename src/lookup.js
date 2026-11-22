@@ -1,8 +1,41 @@
 import { fileIdentity, playbackIdentity } from './confirmations.js';
+import { createEmbeddedProbe, filenameGreekHint } from './embedded.js';
 import { cached, fetchJson } from './http.js';
 import { bestMatch, parseVideoId, videoFilenames, videoHash } from './match.js';
 
 export const shortlistLimit = 12;
+const probeBudget = 16;
+
+function rowScore({ matches, embedded }) {
+  return Math.max(matches[0]?.score ?? 0, embedded ? 2 : 0);
+}
+
+// Kick off container probes as soon as stream URLs are known so they overlap the
+// subtitle provider searches. The budget covers the top streams by upstream order.
+async function probeStreams(streams, probe) {
+  const results = new Map();
+  const seen = new Set();
+  const candidates = [];
+  for (const stream of streams) {
+    const url = typeof stream?.url === 'string' ? stream.url : '';
+    if (!url || seen.has(url) || filenameGreekHint(stream)) continue;
+    seen.add(url);
+    candidates.push(stream);
+    if (candidates.length >= probeBudget) break;
+  }
+  await Promise.all(candidates.map(async (stream) => {
+    const value = await probe(stream);
+    if (value !== undefined) results.set(stream.url, value);
+  }));
+  return results;
+}
+
+function markEmbedded(rows, probed) {
+  for (const row of rows) {
+    row.embedded = filenameGreekHint(row.stream) || probed.get(row.stream.url) === true;
+  }
+  rows.sort((a, b) => rowScore(b) - rowScore(a));
+}
 
 function upstreamStreamUrl(manifestUrl, type, id) {
   const url = new URL(manifestUrl);
@@ -65,7 +98,7 @@ export function diagnosticsName(stream) {
   return releaseFilename(stream) || 'Stream with no filename';
 }
 
-export function createLookup({ config, providers, fetcher, confirmations, logger }) {
+export function createLookup({ config, providers, fetcher, confirmations, logger, cache, probe = createEmbeddedProbe({ fetcher, cache }) }) {
   const streamsByTitle = cached(
     (type, id) => Promise.allSettled(config.manifestUrls.map((url) => fetchJson(upstreamStreamUrl(url, type, id), fetcher))),
     { ttl: 20_000, capacity: 24 }
@@ -74,19 +107,20 @@ export function createLookup({ config, providers, fetcher, confirmations, logger
   return async (type, id) => {
     const video = parseVideoId(type, id);
     if (!video || !config.manifestUrls?.length || !providers.length) return null;
-    const [upstreams, sets] = await Promise.all([
-      streamsByTitle(`${type}:${id}`, type, id),
-      Promise.all(providers.map(async (provider) => {
-        try {
-          return { provider, candidates: await provider.search(video), available: true };
-        } catch {
-          return { provider, candidates: [], available: false };
-        }
-      }))
-    ]);
+    const upstreamsPending = streamsByTitle(`${type}:${id}`, type, id);
+    const setsPending = Promise.all(providers.map(async (provider) => {
+      try {
+        return { provider, candidates: await provider.search(video), available: true };
+      } catch {
+        return { provider, candidates: [], available: false };
+      }
+    }));
+    const upstreams = await upstreamsPending;
     const usable = upstreams.filter((result) => result.status === 'fulfilled' && Array.isArray(result.value?.streams));
     const streams = usable.flatMap((result) => result.value.streams).filter((stream) => stream && typeof stream === 'object');
     const upstreamFailures = upstreams.length - usable.length;
+    const probing = probeStreams(streams, probe);
+    const sets = await setsPending;
     if (upstreamFailures) logger.warn('A stream add-on could not return results.');
     if (sets.some((set) => !set.available)) logger.warn('A subtitle provider could not return results.');
 
@@ -114,7 +148,9 @@ export function createLookup({ config, providers, fetcher, confirmations, logger
       if (searchedMore) rows = rankedRows(streams, sets, video, confirmations);
     }
 
-    const matchedRows = rows.filter(({ matches }) => matches.length > 0);
+    markEmbedded(rows, await probing);
+
+    const matchedRows = rows.filter(({ matches, embedded }) => matches.length > 0 || embedded);
     const selected = config.shortlist !== false ? matchedRows.slice(0, shortlistLimit) : rows;
     return { video, rows, selected, matchedRows, upstreamFailures, sets, searchedMore, sourceCount: streams.length };
   };

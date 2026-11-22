@@ -27,7 +27,7 @@ export function publicSourceAddress({ address, family }) {
   return family === 6 && globalV6.check(address, 'ipv6') && !reserved.check(address, 'ipv6');
 }
 
-export async function fetchPublicSource(url, { signal } = {}) {
+export async function fetchPublicSource(url, { signal, headers } = {}) {
   if (!publicSourceUrl(url)) throw new Error('Shared stream sources require a public HTTPS hostname.');
   const addresses = await lookup(url.hostname, { all: true });
   signal?.throwIfAborted();
@@ -38,7 +38,7 @@ export async function fetchPublicSource(url, { signal } = {}) {
   return new Promise((resolve, reject) => {
     // Keep TLS verification on the original hostname while pinning the validated DNS result.
     const outgoing = request(url, {
-      agent: false, signal, family: destination.family,
+      agent: false, signal, family: destination.family, headers,
       lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family)
     }, (incoming) => {
       const status = incoming.statusCode;

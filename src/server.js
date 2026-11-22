@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createConfigureHandler, createSignupHandler, localOrigin } from './configure.js';
 import { openConfirmations, shiftVtt } from './confirmations.js';
 import { installPath } from './installation.js';
+import { openProbeCache } from './embedded.js';
 import { createLookup, emptyResult, subtitleSelection } from './lookup.js';
 import { matchLabels, streamMatchDescription } from './match.js';
 import { createOpenSubtitles } from './opensubtitles.js';
@@ -33,8 +34,8 @@ const manifest = {
 };
 
 function renderStream(row, video, trackUrl, matchLabelPosition) {
-  const { stream, matches } = row;
-  if (!matches.length) return stream;
+  const { stream, matches, embedded } = row;
+  if (!matches.length && !embedded) return stream;
 
   const tracks = matches.map((match) => {
     const url = trackUrl(subtitleSelection(match, video));
@@ -45,7 +46,7 @@ function renderStream(row, video, trackUrl, matchLabelPosition) {
   const bestMatch = matches[0];
   // Stremio treats title as an alias for description and rejects streams containing both.
   const { title, ...original } = stream;
-  const description = streamMatchDescription(original.description ?? title, bestMatch, matchLabelPosition);
+  const description = streamMatchDescription(original.description ?? title, bestMatch, matchLabelPosition, embedded);
   const subtitles = Array.isArray(original.subtitles) ? original.subtitles : [];
   return { ...original, description, subtitles: [...subtitles, ...tracks] };
 }
@@ -86,7 +87,7 @@ function write(res, status, body, type = 'application/json; charset=utf-8') {
 }
 
 export function createAddon(initial, {
-  fetcher = fetch, publicSourceFetcher = fetchPublicSource, logger = console, settings, confirmations, profiles
+  fetcher = fetch, publicSourceFetcher = fetchPublicSource, logger = console, settings, confirmations, profiles, probe, cache
 } = {}) {
   const { publicUrl } = initial;
   const secret = randomBytes(32);
@@ -110,7 +111,7 @@ export function createAddon(initial, {
       const config = sourceSettings?.get() ?? initial;
       if (runtime?.config !== config) {
         const providers = getProviders(config, fetcher);
-        const lookup = createLookup({ config, providers, confirmations: timing, fetcher: sourceFetcher, logger });
+        const lookup = createLookup({ config, providers, confirmations: timing, fetcher: sourceFetcher, logger, probe, cache });
         runtime = { config, providers, lookup };
       }
       return runtime;
@@ -262,7 +263,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const confirmations = await openConfirmations(fileURLToPath(new URL('../.confirmations.json', import.meta.url)));
     const profiles = process.env.PUBLIC_SIGNUP === '1'
       ? await openProfiles(config, fileURLToPath(new URL('../.installations/', import.meta.url))) : null;
-    const server = createAddon(config, { settings, confirmations, profiles });
+    const cache = openProbeCache(fileURLToPath(new URL('../.probe-cache.json', import.meta.url)));
+    const server = createAddon(config, { settings, confirmations, profiles, cache });
     server.on('error', ({ code }) => {
       console.error(`Could not listen on ${config.host}:${config.port} (${code}).`);
       process.exitCode = 1;

@@ -174,9 +174,13 @@ export function matchReason(match) {
   return ['Likely', [match.group.toUpperCase(), sourceLabels[match.source]].filter(Boolean).join(' ')].join(' · ');
 }
 
-export function streamMatchDescription(details, match, position) {
-  const label = match.score === 2 ? '🇬🇷 Exact match' : `🇬🇷 Greek subtitles · ${matchReason(match)}`;
-  if (match.score > 2) return [label, details].filter(Boolean).join('\n');
+export function streamMatchDescription(details, match, position, embedded = false) {
+  const parts = [];
+  if (embedded) parts.push('Embedded');
+  if (match) parts.push(match.score === 2 ? 'Exact match' : embedded ? matchReason(match) : `Greek subtitles · ${matchReason(match)}`);
+  if (!parts.length) return details;
+  const label = `🇬🇷 ${parts.join(' · ')}`;
+  if (match && match.score > 2) return [label, details].filter(Boolean).join('\n');
 
   const text = String(details ?? '').trimEnd();
   const lines = text ? text.split(/\r?\n/) : [];

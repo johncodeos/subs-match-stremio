@@ -304,8 +304,9 @@ function diagnostics(report, id, csrf, tools, basePath) {
   ${report.matchedRows.slice(0, shortlistLimit).map((row) => `<section>
     <h2 class="release">${escapeHtml(diagnosticsName(row.stream))}</h2>
     ${row.fileKey ? `<p class="help">File ID ${row.fileKey.slice(0, 8).toUpperCase()}</p>` : ''}
+    ${row.embedded && !row.matches.length ? '<p><strong>🇬🇷 Embedded Greek subtitles</strong></p>' : ''}
     ${row.matches.map((match) => `<div class="match-detail">
-      <strong>${escapeHtml(matchReason(match))}</strong> · ${escapeHtml(match.provider.name)}
+      <strong>${escapeHtml(matchReason(match))}</strong> · ${escapeHtml(match.provider.name)}${row.embedded ? ' · 🇬🇷 Embedded' : ''}
       <p class="help release">${escapeHtml(match.release)}</p>
       ${timingForm(row, match, report, id, csrf, tools, basePath)}
     </div>`).join('')}

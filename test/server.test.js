@@ -306,6 +306,40 @@ test('the Greek shortlist shows a title-check link when releases do not match', 
   }]);
 });
 
+test('streams with embedded Greek subtitles are labeled and kept in the shortlist', async (t) => {
+  const hinted = {
+    url: 'https://streams.example/embedded.mp4', name: '1080p', description: 'Embedded release\n2.4 GB',
+    behaviorHints: { filename: 'Show.S02E03.1080p.WEB-DL.GRE.mp4', videoSize: 999 }
+  };
+  const fetcher = async (url) => {
+    if (url.host === 'streams.example') return Response.json({ streams: [unmatched, hinted] });
+    return Response.json({ data: [] });
+  };
+  const get = await listen(t, { manifestUrls: [apiManifest], openSubtitlesKey: 'test-key', shortlist: true }, {
+    fetcher, probe: async () => undefined
+  });
+  const { streams } = await (await get(video)).json();
+  assert.equal(streams.length, 1);
+  assert.equal(streams[0].url, hinted.url);
+  assert.equal(streams[0].description, 'Embedded release\n2.4 GB\n🇬🇷 Embedded');
+});
+
+test('container probing adds the Embedded label next to a subtitle match', async (t) => {
+  const probed = { ...source, url: 'https://streams.example/probed.mp4' };
+  const fetcher = async (url) => {
+    if (url.host === 'streams.example') return Response.json({ streams: [unmatched, probed] });
+    return Response.json({ status: true, subtitles: [{
+      season: 2, episode: 3, release_name: '1080p - 720p YTS.AG', language: 'EL', url: '/subtitle/123-456.zip'
+    }] });
+  };
+  const probe = async (stream) => stream.url === probed.url ? true : undefined;
+  const get = await listen(t, { manifestUrls: [apiManifest], apiKey: 'test-key', shortlist: true }, { fetcher, probe });
+  const { streams } = await (await get(video)).json();
+  assert.equal(streams.length, 1);
+  assert.match(streams[0].description, /(?:^|\n)🇬🇷 Embedded · Likely · YTS$/);
+  assert.equal(streams[0].subtitles.length, 2);
+});
+
 test('SubSource finds Greek movie releases and serves the selected episode from its own archive', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'greek-subsource-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

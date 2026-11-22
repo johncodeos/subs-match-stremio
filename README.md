@@ -78,6 +78,8 @@ Keep `.installations/` in private, persistent storage along with your other sett
 
 The default **Greek shortlist** shows up to 12 matches and collapses identical playback URLs. If no Greek release matches, the shortlist shows a message that opens the title check. Choose **All streams, Greek matches first** in Configure to include the rest in the same list. Use **Exact and likely match label position** to place those labels at the start, after the first line, or at the end of stream details.
 
+Streams that already carry Greek subtitles inside the video file are marked `🇬🇷 Embedded` and join the shortlist even when no release name matched. The add-on reads the container's own track metadata (Matroska or MP4) over a small ranged request and also trusts release-name signals such as `GRE`, `Greek subs`, or a 🇬🇷 flag. Dubbed Greek audio is not treated as subtitles. A stream can show both markers at once, for example `🇬🇷 Embedded · Exact match`.
+
 Open **Check a movie or episode** in Configure and paste a Stremio detail link, IMDb ID, or TMDB ID. The page shows the number of streams, the status of each configured subtitle provider, and the release details behind its best matches. After checking the timing in playback, find the same row by the short File ID shown in the Greek subtitle label and press **Timing is good**. Enter an optional delay in seconds. A positive number shows subtitles later. Use **Remove confirmation** to undo it.
 
 Confirmed timings are saved locally in `.confirmations.json`. They apply to the identified playback file. The add-on uses a video hash, file name plus byte size, or exact playback source, depending on the metadata the source provides.
@@ -91,3 +93,7 @@ The matcher supports IMDb and TMDB IDs, including AIOMetadata episode IDs such a
 ## Checks
 
 Run `node --test` from this folder using Node.js 22 or later. Tests exercise local settings, stream ranking, ZIP episode selection, and simulated subtitle API search and downloads.
+
+## License
+
+Released under the [MIT License](LICENSE).
