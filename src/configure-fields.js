@@ -1,6 +1,3 @@
-const form = document.getElementById('configure-settings');
-const csrf = form.elements.namedItem('csrf').value;
-const configurePath = form.getAttribute('action');
 const copyLink = document.getElementById('copy-install-link');
 if (copyLink) {
   const installLink = document.getElementById('install-manifest');
@@ -11,96 +8,142 @@ if (copyLink) {
       await navigator.clipboard.writeText(installLink.value);
       status.textContent = 'Install link copied.';
     } catch {
+      document.getElementById('install-link-details').open = true;
       installLink.focus();
       installLink.select();
       status.textContent = 'Copy the selected install link.';
     }
   });
 }
-const position = form.elements.namedItem('EXACT_MATCH_POSITION');
-const preview = document.getElementById('match-label-preview');
-const examples = JSON.parse(preview.dataset.examples);
-position.addEventListener('change', () => {
-  preview.textContent = examples[position.value];
-});
 
-for (const input of form.querySelectorAll('textarea')) {
-  form.addEventListener('formdata', ({ formData }) => {
-    if (input.value === input.defaultValue) formData.delete(input.name);
-    else if (!input.value.trim()) formData.set(`clear_${input.name}`, '1');
+function setupProviders(form) {
+  const picker = document.getElementById('provider-picker');
+  const select = document.getElementById('add-provider');
+  const summary = document.getElementById('provider-picker-summary');
+  const options = [...select.options].slice(1);
+
+  for (const option of options) {
+    const input = form.elements.namedItem(option.value);
+    const saved = input.dataset.saved === 'true' || Boolean(input.value);
+    input.closest('[data-provider-field]').hidden = !saved;
+    option.disabled = saved;
+    option.hidden = saved;
+  }
+
+  function updatePicker() {
+    picker.hidden = options.every((option) => option.disabled);
+    picker.open = !options.some((option) => option.disabled);
+    summary.hidden = picker.open;
+  }
+
+  select.addEventListener('change', () => {
+    if (!select.value) return;
+    const input = form.elements.namedItem(select.value);
+    const option = select.selectedOptions[0];
+    input.closest('[data-provider-field]').hidden = false;
+    select.value = '';
+    option.disabled = true;
+    option.hidden = true;
+    updatePicker();
+    input.focus();
   });
+  updatePicker();
 }
 
-for (const button of form.querySelectorAll('.visibility-toggle')) {
-  const input = document.getElementById(button.getAttribute('aria-controls'));
-  const error = document.getElementById(`error-${input.id}`);
-  const label = input.labels[0].textContent;
-  const saved = input.dataset.saved === 'true';
-  let loaded = false;
-  let edited = false;
-  button.hidden = false;
-
-  input.addEventListener('input', () => {
-    edited = true;
-    if (saved) input.placeholder = '';
-    error.textContent = '';
+function setupForm(form) {
+  const csrf = form.elements.namedItem('csrf').value;
+  const configurePath = form.getAttribute('action');
+  setupProviders(form);
+  const position = form.elements.namedItem('EXACT_MATCH_POSITION');
+  const preview = document.getElementById('match-label-preview');
+  const examples = JSON.parse(preview.dataset.examples);
+  position.addEventListener('change', () => {
+    preview.textContent = examples[position.value];
   });
 
-  form.addEventListener('formdata', ({ formData }) => {
-    if (loaded && !edited) formData.delete(input.name);
-    if (saved && edited && !input.value.trim()) formData.set(`clear_${input.name}`, '1');
-  });
+  for (const input of form.querySelectorAll('textarea')) {
+    form.addEventListener('formdata', ({ formData }) => {
+      if (input.value === input.defaultValue) formData.delete(input.name);
+      else if (!input.value.trim()) formData.set(`clear_${input.name}`, '1');
+    });
+  }
 
-  button.addEventListener('click', async () => {
-    const show = input.type === 'password';
-    if (show && saved && !loaded && !edited && !input.value) {
-      button.disabled = true;
+  for (const button of form.querySelectorAll('.visibility-toggle')) {
+    const input = document.getElementById(button.getAttribute('aria-controls'));
+    const error = document.getElementById(`error-${input.id}`);
+    const label = input.labels[0].textContent;
+    const saved = input.dataset.saved === 'true';
+    let loaded = false;
+    let edited = false;
+    button.hidden = false;
+
+    input.addEventListener('input', () => {
+      edited = true;
+      if (saved) input.placeholder = '';
       error.textContent = '';
-      try {
-        const response = await fetch(`${configurePath}/reveal`, {
-          method: 'POST',
-          body: new URLSearchParams({ csrf, field: input.name })
-        });
-        if (!response.ok) throw new Error('Could not load saved value');
-        const { value } = await response.json();
-        if (typeof value !== 'string') throw new Error('Invalid saved value');
-        if (!edited && !input.value) {
-          input.value = value;
-          input.placeholder = '';
-          loaded = true;
+    });
+
+    form.addEventListener('formdata', ({ formData }) => {
+      if (loaded && !edited) formData.delete(input.name);
+      if (saved && edited && !input.value.trim()) formData.set(`clear_${input.name}`, '1');
+    });
+
+    button.addEventListener('click', async () => {
+      const show = input.type === 'password';
+      if (show && saved && !loaded && !edited && !input.value) {
+        button.disabled = true;
+        error.textContent = '';
+        try {
+          const response = await fetch(`${configurePath}/reveal`, {
+            method: 'POST',
+            body: new URLSearchParams({ csrf, field: input.name })
+          });
+          if (!response.ok) throw new Error('Could not load saved value');
+          const { value } = await response.json();
+          if (typeof value !== 'string') throw new Error('Invalid saved value');
+          if (!edited && !input.value) {
+            input.value = value;
+            input.placeholder = '';
+            loaded = true;
+          }
+        } catch {
+          error.textContent = 'Could not load the saved value. Reload Configure and try again.';
+          return;
+        } finally {
+          button.disabled = false;
         }
-      } catch {
-        error.textContent = 'Could not load the saved value. Reload Configure and try again.';
-        return;
-      } finally {
-        button.disabled = false;
+      }
+
+      input.type = show ? 'text' : 'password';
+      const action = `${show ? 'Hide' : 'Show'} ${label}`;
+      button.setAttribute('aria-label', action);
+      button.title = action;
+    });
+  }
+
+  const requiredGroups = [...form.querySelectorAll('[data-required-message]')].map((section) => ({
+    fields: [...section.querySelectorAll('input[name], textarea[name]')],
+    error: section.querySelector('[data-required-error]'),
+    message: section.dataset.requiredMessage
+  }));
+
+  form.addEventListener('submit', (event) => {
+    const formData = new FormData(form);
+    let firstMissing;
+    for (const { fields, error, message } of requiredGroups) {
+      const complete = fields.some((input) => formData.get(input.name)?.trim() ||
+        (input.dataset.saved === 'true' && !formData.has(`clear_${input.name}`)));
+      error.textContent = complete ? '' : message;
+      if (!complete) {
+        firstMissing ??= fields.find((input) => !input.closest('[hidden]')) ?? document.getElementById('add-provider');
       }
     }
-
-    input.type = show ? 'text' : 'password';
-    const action = `${show ? 'Hide' : 'Show'} ${label}`;
-    button.setAttribute('aria-label', action);
-    button.title = action;
+    if (firstMissing) {
+      event.preventDefault();
+      firstMissing.focus();
+    }
   });
 }
 
-const requiredGroups = [...form.querySelectorAll('[data-required-message]')].map((section) => ({
-  fields: [...section.querySelectorAll('input[name], textarea[name]')],
-  error: section.querySelector('[data-required-error]'),
-  message: section.dataset.requiredMessage
-}));
-
-form.addEventListener('submit', (event) => {
-  const formData = new FormData(form);
-  let firstMissing;
-  for (const { fields, error, message } of requiredGroups) {
-    const complete = fields.some((input) => formData.get(input.name)?.trim() ||
-      (input.dataset.saved === 'true' && !formData.has(`clear_${input.name}`)));
-    error.textContent = complete ? '' : message;
-    if (!complete) firstMissing ??= fields[0];
-  }
-  if (firstMissing) {
-    event.preventDefault();
-    firstMissing.focus();
-  }
-});
+const form = document.getElementById('configure-settings');
+if (form) setupForm(form);

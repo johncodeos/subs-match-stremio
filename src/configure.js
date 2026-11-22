@@ -26,19 +26,18 @@ function escapeHtml(text) {
   })[character]);
 }
 
-function streamField(name, value, help) {
+function streamField(name, value) {
   return `<div class="field">
-    <div class="label-line"><label for="${name}">${fields[name]}</label>${value ? '<span class="saved-tag">Saved</span>' : ''}</div>
-    <textarea id="${name}" name="${name}" rows="3" wrap="soft" maxlength="4096"
+    <label class="sr-only" for="${name}">${fields[name]}</label>
+    <textarea id="${name}" name="${name}" rows="1" wrap="soft" maxlength="4096"
       data-saved="${Boolean(value)}" placeholder="https://example.com/manifest.json" autocomplete="off" autocapitalize="off"
-      spellcheck="false" aria-describedby="help-${name}">${escapeHtml(value)}</textarea>
-    <p class="help" id="help-${name}">${help}</p>
+      inputmode="url" spellcheck="false">${escapeHtml(value)}</textarea>
   </div>`;
 }
 
 function apiKeyField(name, settings, help) {
   const saved = Boolean(settings[name]);
-  return `<div class="field">
+  return `<div class="field" data-provider-field>
     <div class="label-line"><label for="${name}">${fields[name]}</label>${saved ? '<span class="saved-tag">Saved</span>' : ''}</div>
     <div class="secret-input">
       <input id="${name}" name="${name}" type="password" maxlength="256"
@@ -58,6 +57,12 @@ function apiKeyField(name, settings, help) {
   </div>`;
 }
 
+const subtitleProviders = [
+  ['SUBDL_API_KEY', 'SubDL', '<a href="https://subdl.com/api-doc" target="_blank" rel="noreferrer">Get a SubDL API key</a>'],
+  ['OPENSUBTITLES_API_KEY', 'OpenSubtitles', '<a href="https://www.opensubtitles.com/en/consumers" target="_blank" rel="noreferrer">Create an OpenSubtitles API key</a>. Downloads use the anonymous quota.'],
+  ['SUBSOURCE_API_KEY', 'SubSource', '<a href="https://subsource.net/api-docs" target="_blank" rel="noreferrer">Get a SubSource API key</a> under API &amp; Plans in your account.']
+];
+
 function layout(title, content, basePath = '') {
   return `<!doctype html>
 <html lang="en">
@@ -74,8 +79,9 @@ function layout(title, content, basePath = '') {
   --accent:#8bc6ff;--brand:#075dbd;--brand-hover:#1069cd;
 }
 *{box-sizing:border-box}
-body{margin:0;background:radial-gradient(ellipse 42rem 36rem at 50% 0,#073a74 0,transparent 100%),var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}
+body{min-height:100vh;margin:0;background:radial-gradient(ellipse 42rem 36rem at 50% 0,#073a74 0,transparent 100%),var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}
 main{max-width:760px;margin:auto;padding:52px 28px 38px}
+main:has(.setup){padding-top:32px}
 header{margin-bottom:24px}
 .brand{display:flex;align-items:center;gap:16px}
 .brand img{width:64px;height:64px;flex:none}
@@ -83,6 +89,7 @@ h1{margin:0 0 6px;font-size:clamp(29px,5vw,42px);line-height:1.14;letter-spacing
 h2{margin:0 0 5px;font-size:20px;letter-spacing:-.017em}
 p{margin:0}
 .sub,.help{color:var(--muted)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .required-mark{color:var(--accent)}
 .status{display:flex;gap:12px;align-items:baseline;margin-top:18px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--tint)}
 .mode{white-space:nowrap;color:var(--accent)}
@@ -91,14 +98,21 @@ section{background:var(--surface);border:1px solid var(--line);border-radius:14p
 .label-line{display:flex;gap:8px;align-items:center;margin-bottom:6px}
 label{font-weight:600}
 input[type=password],input[type=text],input[type=number],select,textarea{display:block;width:100%;height:44px;color:var(--text);background:var(--field);border:1px solid var(--field-line);border-radius:8px;padding:0 12px;font:inherit}
-textarea{height:auto;min-height:5.5rem;padding:10px 12px;resize:vertical;overflow-wrap:anywhere}
+textarea{height:auto;min-height:44px;padding:9px 12px;resize:vertical;overflow-wrap:anywhere}
 input::placeholder,textarea::placeholder{color:#a9c1df}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .help{font-size:13px;margin-top:5px}
-.stream-steps{color:var(--muted);font-size:14px;margin:10px 0 0;padding-inline-start:1.35rem}
-.stream-steps li + li{margin-top:5px}
-.stream-steps strong,.stream-steps code{color:var(--text)}
-.stream-steps code{overflow-wrap:anywhere}
+.setup{padding:22px 24px}
+.setup-group + .setup-group{margin-top:18px;padding-top:17px;border-top:1px solid var(--line)}
+.setup-group h2{font-size:17px;margin:0 0 6px}
+.setup-group .field{margin-top:10px}
+.disclosure{margin-top:8px}
+.disclosure summary{width:fit-content;padding:4px 0;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer}
+.disclosure summary:hover{text-decoration:underline;text-underline-offset:3px}
+.advanced{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.advanced .field:first-of-type{margin-top:8px}
+.setup-action{width:100%;margin-top:20px}
+.provider-picker[open] select{margin-top:6px}
 a{color:var(--accent);text-underline-offset:3px}
 .saved-tag{font-size:12px;color:var(--accent)}
 .notice{margin:0 0 16px;border-radius:8px;padding:10px 14px;border:1px solid var(--field-line);background:var(--tint)}
@@ -106,6 +120,14 @@ a{color:var(--accent);text-underline-offset:3px}
 button{color:var(--text);background:var(--brand);border:1px solid #4084d2;border-radius:8px;padding:11px 18px;font:inherit;font-weight:700;cursor:pointer}
 button:hover{background:var(--brand-hover)}
 .install-section{margin-top:20px}
+.install-header{max-width:560px;margin-inline:auto}
+.install-ready{max-width:560px;margin-inline:auto;text-align:center}
+.install-ready h2:focus{outline:none}
+.install-ready .install-actions{justify-content:center}
+.install-ready .install-details{margin:14px auto 0;text-align:start;max-width:380px}
+.install-ready .install-details:not([open]) summary{margin-inline:auto}
+.install-ready .configure-back{display:inline-block;margin-top:16px;font-size:14px}
+#copy-install-status:empty{display:none}
 .install-actions{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
 .install-link{display:inline-flex;align-items:center;padding:11px 18px;border-radius:8px;background:var(--brand);color:var(--text);border:1px solid #4084d2;text-decoration:none;font-weight:700}
 .install-link:hover{background:var(--brand-hover)}
@@ -136,7 +158,7 @@ button:hover{background:var(--brand-hover)}
 .timing button{padding:8px 11px}
 .secondary{background:var(--tint);color:var(--text);border-color:var(--field-line)}
 .secondary:hover{background:#173d67}
-@media(max-width:480px){main{padding:30px 16px}section{padding:17px}.brand{gap:12px}.brand img{width:48px;height:48px}.label-position{grid-template-columns:1fr;gap:10px}.status{display:block}.mode{display:block}}
+@media(max-width:480px){main,main:has(.setup){padding:26px 16px}.setup,section{padding:17px}.brand{gap:12px}.brand img{width:48px;height:48px}.label-position{grid-template-columns:1fr;gap:10px}.status{display:block}.mode{display:block}.install-actions>*{width:100%;justify-content:center}}
 </style>
 </head>
 <body>
@@ -147,22 +169,43 @@ ${content}
 </html>`;
 }
 
-function installSection(config) {
+function installSection(config, { ready = false, basePath = '' } = {}) {
   if (!config.installation) return '';
   const url = config.publicUrl + installPath(config.installation) + '/manifest.json';
   const safeUrl = escapeHtml(url);
   const installUrl = escapeHtml(url.replace(/^https?:\/\//, 'stremio://'));
-  return `<section class="install-section" aria-labelledby="install-addon">
-    <h2 id="install-addon">Install in Stremio</h2>
-    <p class="help">Use the install button in the Stremio app, or copy the link into <strong>Addons → Add addon</strong> in Stremio Web. Keep this link private.</p>
+  return `<section class="install-section${ready ? ' install-ready' : ''}" aria-labelledby="install-addon">
+    <h2 id="install-addon"${ready ? ' tabindex="-1"' : ''}>${ready ? 'Your add-on is ready' : 'Install in Stremio'}</h2>
     <div class="install-actions">
       <a class="install-link" href="${installUrl}">Install in Stremio</a>
       <button type="button" class="secondary" id="copy-install-link" hidden>Copy install link</button>
     </div>
-    <label for="install-manifest">Private install link</label>
-    <input type="text" id="install-manifest" value="${safeUrl}" readonly spellcheck="false">
+    <p class="help">Using Stremio Web? Paste the link into <strong>Addons → Add addon</strong>.</p>
+    <details class="disclosure install-details" id="install-link-details">
+      <summary>Show private install link</summary>
+      <label for="install-manifest">Private install link</label>
+      <input type="text" id="install-manifest" value="${safeUrl}" readonly spellcheck="false" aria-describedby="install-link-help">
+      <p class="help" id="install-link-help">Keep this link private. It grants access to your installation.</p>
+    </details>
     <p id="copy-install-status" class="help" role="status"></p>
+    ${ready ? `<a class="configure-back" href="${basePath}/configure">Edit settings</a>` : ''}
   </section>`;
+}
+
+function brand(basePath) {
+  return `<div class="brand">
+    <img src="${basePath}/addon-icon.png" alt="" width="64" height="64">
+    <div>
+      <h1>Greek Sub Match</h1>
+      <p class="sub">Find Greek subtitles that match what you play in Stremio.</p>
+    </div>
+  </div>`;
+}
+
+function installPage(config, basePath) {
+  return layout('Install', `<header class="install-header">${brand(basePath)}</header>
+<script src="${basePath}/configure/fields.js" defer></script>
+${installSection(config, { ready: true, basePath })}`, basePath);
 }
 
 function page(config, csrf, { error = '', saved = false, basePath = '', signup = false } = {}) {
@@ -171,80 +214,83 @@ function page(config, csrf, { error = '', saved = false, basePath = '', signup =
   const ready = live ? 'Ready to match Greek subtitles for movies and episodes.'
     : 'Add a stream add-on link and at least one subtitle API key to start matching your library.';
   return layout('Configure', `<header>
-  <div class="brand">
-    <img src="${basePath}/addon-icon.png" alt="" width="64" height="64">
-    <div>
-      <h1>Greek Sub Match</h1>
-      <p class="sub">Configure sources for Greek subtitle matching in Stremio.</p>
-    </div>
-  </div>
+  ${brand(basePath)}
   ${signup ? '' : `<a class="check-link" href="${basePath}/configure/check">Check a movie or episode</a>`}
   ${basePath && !signup ? `<form class="sign-out" method="post" action="${basePath}/configure/logout">
     <input type="hidden" name="csrf" value="${csrf}">
     <button class="secondary" type="submit">Lock Configure</button>
   </form>` : ''}
-  <p class="status"><strong class="mode">${live ? 'Live mode' : 'Setup needed'}</strong><span>${ready}</span></p>
+  ${signup ? '' : `<p class="status"><strong class="mode">${live ? 'Live mode' : 'Setup needed'}</strong><span>${ready}</span></p>`}
 </header>
 ${error ? `<p class="notice error" role="alert">${escapeHtml(error)}</p>`
     : saved ? '<p class="notice" role="status">Settings saved. They apply to the next stream search.</p>' : ''}
 <form id="configure-settings" method="post" action="${basePath}/configure" autocomplete="off">
   <script src="${basePath}/configure/fields.js" defer></script>
   <input type="hidden" name="csrf" value="${csrf}">
-  <section aria-labelledby="streams" data-required-message="${setupRequirements.streams}">
-    <h2 id="streams">Stream sources <span class="required-mark" aria-hidden="true">*</span></h2>
-    <p class="help">${signup ? 'Add at least one public HTTPS stream add-on link.' : 'At least one stream add-on link is required. Greek Sub Match checks subtitles against the playable streams from your source add-on.'}</p>
-    <p class="field-error" role="alert" data-required-error></p>
-    <ol class="stream-steps">
-      <li>In Stremio, go to <strong>Addons → Installed</strong> and find the add-on you use to get playable movie or series streams.</li>
-      <li>Select <strong>Share addon</strong> and copy its link. You can also copy the install link from that add-on’s own setup page.</li>
-      <li>Paste the full link in the first field. It should look like <code>https://example.com/manifest.json</code>.</li>
-    </ol>
-    ${streamField('STREAM_ADDON_MANIFEST', settings.STREAM_ADDON_MANIFEST, 'Paste one install link for the add-on that supplies your streams.')}
-    ${streamField('STREAM_ADDON_MANIFEST_2', settings.STREAM_ADDON_MANIFEST_2, 'Paste one install link if you also want to check streams from a second add-on.')}
-  </section>
-  <section aria-labelledby="providers" data-required-message="${setupRequirements.providers}">
-    <h2 id="providers">Subtitle providers <span class="required-mark" aria-hidden="true">*</span></h2>
-    <p class="help">At least one API key is required. OpenSubtitles downloads use its anonymous quota.</p>
-    <p class="field-error" role="alert" data-required-error></p>
-    ${apiKeyField('SUBDL_API_KEY', settings, '<a href="https://subdl.com/api-doc" target="_blank" rel="noreferrer">Get a SubDL API key</a>')}
-    ${apiKeyField('OPENSUBTITLES_API_KEY', settings, '<a href="https://www.opensubtitles.com/en/consumers" target="_blank" rel="noreferrer">Create an OpenSubtitles API key</a>')}
-    ${apiKeyField('SUBSOURCE_API_KEY', settings, 'Create a key in your SubSource account under API &amp; Plans. <a href="https://subsource.net/api-docs" target="_blank" rel="noreferrer">SubSource API instructions</a>')}
-  </section>
-  <section aria-labelledby="stream-list">
-    <h2 id="stream-list">Stream list</h2>
-    <label for="STREAM_LIST">Results to show in Stremio</label>
-    <select id="STREAM_LIST" name="STREAM_LIST">
-      <option value="shortlist" ${config.shortlist ? 'selected' : ''}>Greek shortlist</option>
-      <option value="all" ${config.shortlist ? '' : 'selected'}>All streams, Greek matches first</option>
-    </select>
-    <p class="help">The shortlist shows up to ${shortlistLimit} matches. If no release matches, Stremio shows a message with a link to check the title.</p>
-    <div class="field label-position">
-      <div>
-        <label for="EXACT_MATCH_POSITION">Exact and likely match label position</label>
-        <select id="EXACT_MATCH_POSITION" name="EXACT_MATCH_POSITION">
-          ${Object.entries(matchLabelPositions).map(([value, label]) =>
-            `<option value="${value}"${config.matchLabelPosition === value ? ' selected' : ''}>${label}</option>`).join('')}
+  <section class="setup" aria-label="Add-on settings">
+    <div class="setup-group" role="group" aria-labelledby="streams" data-required-message="${setupRequirements.streams}">
+      <h2 id="streams">Stream sources <span class="required-mark" aria-hidden="true">*</span></h2>
+      ${streamField('STREAM_ADDON_MANIFEST', settings.STREAM_ADDON_MANIFEST)}
+      <p class="field-error" role="alert" data-required-error></p>
+      <details class="disclosure">
+        <summary>Where do I find this link?</summary>
+        <p class="help">In Stremio, go to <strong>Addons → Installed</strong>, find the add-on you use for streams, and choose <strong>Share addon</strong>. You can also copy the link from that add-on’s setup page. ${signup ? 'Use a public HTTPS manifest link.' : ''}</p>
+      </details>
+      <details class="disclosure"${settings.STREAM_ADDON_MANIFEST_2 ? ' open' : ''}>
+        <summary>${settings.STREAM_ADDON_MANIFEST_2 ? 'Second stream source' : 'Add another source'}</summary>
+        ${streamField('STREAM_ADDON_MANIFEST_2', settings.STREAM_ADDON_MANIFEST_2)}
+      </details>
+    </div>
+    <div class="setup-group" role="group" aria-labelledby="providers" data-required-message="${setupRequirements.providers}">
+      <h2 id="providers">Subtitle providers <span class="required-mark" aria-hidden="true">*</span></h2>
+      <p class="help">Add at least one provider to search for Greek subtitles.</p>
+      ${subtitleProviders.map(([name, , help]) => apiKeyField(name, settings, help)).join('')}
+      <details class="disclosure provider-picker" id="provider-picker" hidden>
+        <summary id="provider-picker-summary">Add another provider</summary>
+        <label class="sr-only" for="add-provider">Subtitle provider</label>
+        <select id="add-provider">
+          <option value="">Choose a provider</option>
+          ${subtitleProviders.map(([name, label]) => `<option value="${name}">${label}</option>`).join('')}
         </select>
+      </details>
+      <p class="field-error" role="alert" data-required-error></p>
+    </div>
+    <div class="setup-group" role="group" aria-labelledby="configuration-password">
+      <h2 id="configuration-password">Configuration password</h2>
+      <p class="help" id="install-password-help">${config.installation ? 'Change the password you use to unlock Configure.' : 'Use at least 12 characters. You’ll need this password to edit settings from Stremio.'}</p>
+      <div class="field">
+        <label class="sr-only" for="install-password">${config.installation ? 'New password (optional)' : 'Private installation password'}</label>
+        <input type="password" name="install_password" id="install-password" minlength="12" maxlength="256"
+          placeholder="${config.installation ? 'New password (optional)' : 'Choose a password'}" autocomplete="new-password"
+          aria-describedby="install-password-help"${signup ? ' required' : ''}>
       </div>
-      <figure class="stream-preview">
-        <figcaption>Stream preview</figcaption>
-        <pre id="match-label-preview" aria-live="polite" aria-atomic="true" data-examples="${escapeHtml(JSON.stringify(exactMatchExamples))}">${escapeHtml(exactMatchExamples[config.matchLabelPosition])}</pre>
-      </figure>
     </div>
+    <details class="disclosure advanced">
+      <summary>Advanced options</summary>
+      <div class="field">
+        <label for="STREAM_LIST">Results to show in Stremio</label>
+        <select id="STREAM_LIST" name="STREAM_LIST">
+          <option value="shortlist" ${config.shortlist ? 'selected' : ''}>Greek shortlist</option>
+          <option value="all" ${config.shortlist ? '' : 'selected'}>All streams, Greek matches first</option>
+        </select>
+        <p class="help">The shortlist shows up to ${shortlistLimit} matches. If no release matches, Stremio shows a message with a link to check the title.</p>
+      </div>
+      <div class="field label-position">
+        <div>
+          <label for="EXACT_MATCH_POSITION">Exact and likely match label position</label>
+          <select id="EXACT_MATCH_POSITION" name="EXACT_MATCH_POSITION">
+            ${Object.entries(matchLabelPositions).map(([value, label]) =>
+              `<option value="${value}"${config.matchLabelPosition === value ? ' selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </div>
+        <figure class="stream-preview">
+          <figcaption>Stream preview</figcaption>
+          <pre id="match-label-preview" aria-live="polite" aria-atomic="true" data-examples="${escapeHtml(JSON.stringify(exactMatchExamples))}">${escapeHtml(exactMatchExamples[config.matchLabelPosition])}</pre>
+        </figure>
+      </div>
+    </details>
+    <button class="setup-action" type="submit">${signup ? 'Continue to install' : 'Save settings'}</button>
   </section>
-  <section aria-labelledby="configuration-password">
-    <h2 id="configuration-password">Configuration password</h2>
-    <p class="help">${signup ? 'You’ll use this password to reopen your saved settings from Stremio.'
-      : config.installation ? 'Set a new password if you want to change how you unlock Configure.'
-        : 'Choose a password to create a private install link and edit these settings later from Stremio.'}</p>
-    <div class="field">
-      <label for="install-password">${config.installation ? 'New password (optional)' : 'Private installation password'}</label>
-      <input type="password" name="install_password" id="install-password" minlength="12" maxlength="256"
-        autocomplete="new-password" aria-describedby="install-password-help"${signup ? ' required' : ''}>
-      <p class="help" id="install-password-help">Use at least 12 characters.</p>
-    </div>
-  </section>
-  <button type="submit">${signup ? 'Create install link' : 'Save settings'}</button>
 </form>
 ${installSection(config)}
 `, basePath);
@@ -509,6 +555,9 @@ export function createConfigureHandler(store, logger, tools) {
     if ((revealing || loggingOut) && req.method !== 'POST') return writePage(res, 405, 'Use POST.');
     if (req.method === 'GET') {
       try {
+        if (installedUrl && !checking && url.searchParams.get('install') === '1') {
+          return writePage(res, 200, installPage(store.get(), basePath));
+        }
         const html = checking ? await checkPage(store, csrf, url, tools, basePath)
           : page(store.get(), csrf, { saved: url.searchParams.get('saved') === '1', basePath });
         return writePage(res, 200, html);
@@ -613,7 +662,7 @@ export function createSignupHandler(profiles, register, logger) {
       attempts += 1;
       const profile = await profiles.create(formSettings(form), password);
       const installedUrl = new URL(profiles.blank.publicUrl + installPath(profile.settings.get().installation));
-      return register(profile).configure.startSession(res, installedUrl, '/configure?saved=1#install-addon');
+      return register(profile).configure.startSession(res, installedUrl, '/configure?install=1#install-addon');
     } catch (error) {
       if (error instanceof InvalidSettings) return show(400, error.message);
       logger.warn('Could not create an installation.');

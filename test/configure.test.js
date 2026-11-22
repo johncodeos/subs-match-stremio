@@ -72,8 +72,8 @@ test('local settings are saved privately, applied in place, and survive a restar
   assert.match(html, /OpenSubtitles API key/);
   assert.match(html, /Addons → Installed/);
   assert.match(html, /https:\/\/example\.com\/manifest\.json/);
-  assert.match(html, /<textarea id="STREAM_ADDON_MANIFEST" name="STREAM_ADDON_MANIFEST" rows="3" wrap="soft"/);
-  assert.match(html, /<textarea id="STREAM_ADDON_MANIFEST_2" name="STREAM_ADDON_MANIFEST_2" rows="3" wrap="soft"/);
+  assert.match(html, /<textarea id="STREAM_ADDON_MANIFEST" name="STREAM_ADDON_MANIFEST" rows="1" wrap="soft"/);
+  assert.match(html, /<textarea id="STREAM_ADDON_MANIFEST_2" name="STREAM_ADDON_MANIFEST_2" rows="1" wrap="soft"/);
   assert.doesNotMatch(html, /aria-controls="STREAM_ADDON_MANIFEST(?:_2)?"/);
   assert.match(html, /<input id="SUBSOURCE_API_KEY" name="SUBSOURCE_API_KEY" type="password"/);
   assert.match(html, /Greek shortlist/);
@@ -400,7 +400,8 @@ test('public Configure creates separate installations with independent settings 
     method: 'POST', headers: { Origin: base, ...(cookie ? { Cookie: cookie } : {}) }, body: new URLSearchParams(form)
   });
   const publicPage = await (await remote('/configure')).text();
-  assert.match(publicPage, /Create install link/);
+  assert.match(publicPage, /Continue to install/);
+  assert.match(publicPage, /<details class="disclosure advanced">\s*<summary>Advanced options<\/summary>/);
   assert.doesNotMatch(publicPage, /owner\.example|owner-fixture-key/);
   assert.match(await (await fetch(origin + '/configure')).text(), /https:\/\/owner\.example/);
   assert.equal((await remote('/manifest.json')).status, 404);
@@ -423,6 +424,13 @@ test('public Configure creates separate installations with independent settings 
     assert.ok(!location.href.includes(key) && !location.href.includes(password));
     const token = location.pathname.split('/')[2];
     const cookie = response.headers.get('set-cookie').split(';')[0];
+    const handoff = await (await remote(location.pathname + location.search, { headers: { Cookie: cookie } })).text();
+    assert.match(handoff, /Your add-on is ready/);
+    assert.ok(handoff.includes(`stremio://${new URL(base).host}/install/${token}/manifest.json`));
+    assert.match(handoff, /Copy install link/);
+    assert.match(handoff, /Show private install link/);
+    assert.match(handoff, /Edit settings/);
+    assert.doesNotMatch(handoff, /configure-settings|install_password/);
     const editor = await (await remote(location.pathname, { headers: { Cookie: cookie } })).text();
     assert.match(editor, /Install in Stremio/);
     assert.ok(editor.includes(`https://${name}.example/manifest.json`));

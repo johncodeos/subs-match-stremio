@@ -96,7 +96,7 @@ Run one instance per owner. The private install link grants Stremio access; the 
 
 ## Shared Configure page
 
-To let other people install from one hosted site, deploy the VPS setup above with `PUBLIC_SIGNUP=1` in `.env`. On the public hostname, `/configure` opens a blank form: each visitor enters their own stream add-on links and subtitle API keys, sets a password, and selects **Create install link**. They install from the generated link and unlock their own settings with **Configure** in Stremio. The host administrator keeps using the loopback address through the SSH tunnel.
+To let other people install from one hosted site, deploy the VPS setup above with `PUBLIC_SIGNUP=1` in `.env`. On the public hostname, each visitor opens `/configure`, enters a stream add-on link and a subtitle API key, sets a password, and selects **Continue to install**. The next screen offers **Install in Stremio** and **Copy install link**. Visitors can unlock their saved settings with **Configure** in Stremio. The host administrator keeps using the loopback address through the SSH tunnel.
 
 Add this block to the same Caddy site, next to the private installation matcher, keeping the fallback `404` handler:
 
