@@ -16,35 +16,50 @@
 </p>
 
 <p align="center">
-  <a href="#start-and-configure-on-a-mac">Run on a Mac</a> ·
-  <a href="#private-vps-deployment">Hosting</a> ·
-  <a href="#shared-configure-page">Shared page</a> ·
-  <a href="#shortlist-and-timing">Shortlist</a> ·
-  <a href="#provider-behavior">Providers</a> ·
-  <a href="#checks">Checks</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#run-on-a-mac">Run on a Mac</a> ·
+  <a href="#host-on-a-vps">Host on a VPS</a> ·
+  <a href="#labels-and-timing">Labels &amp; timing</a> ·
+  <a href="#subtitle-providers">Providers</a> ·
+  <a href="#development">Development</a> ·
   <a href="#license">License</a>
 </p>
 
-Greek Sub Match compares subtitle release names with the streams for the same movie or episode. It ranks saved confirmations and video hash matches ahead of exact filenames and likely release matches. It understands shared releases such as `1080/720p YTS.AG` and keeps each source, resolution, and group together when a listing names separate versions.
+Greek Sub Match sits between your stream add-on and Stremio. It ranks playable streams by how well the available Greek subtitles match each release — and it marks the streams that already carry Greek subtitles inside the video file.
 
-## Start and configure on a Mac
+## Features
 
-1. Double-click `Start.command` and leave its Terminal window open. It uses Node.js 22 or later and can use the copy bundled with ChatGPT on this Mac.
-2. Open `http://127.0.0.1:7331/configure`. You can also double-click `Configure.command`.
-3. Add the install link for a Stremio add-on that supplies playable movie or series streams. Find it through **Addons → Installed → Share addon** or its own setup page. The link looks like `https://example.com/manifest.json`. You can add a second source in the optional field.
-4. Enter a key for at least one subtitle provider, choose your preferences, and set a configuration password. Select **Save settings**. [SubDL API](https://subdl.com/api-doc) · [OpenSubtitles API Consumers](https://www.opensubtitles.com/en/consumers) · [SubSource API](https://subsource.net/api-docs)
-5. Choose **Install in Stremio**, or use **Copy install link** and paste it into **Stremio Web → Addons → Add addon**. Use that private install entry’s **Configure** button to unlock and edit your saved settings. Existing local installations can still open the loopback manifest at `http://127.0.0.1:7331/manifest.json`.
+- **Release matching** — pairs subtitle release names with the streams of the same movie or episode. Saved timing confirmations and video hash matches rank first, then exact filenames, then likely releases. Shared listings such as `1080/720p YTS.AG` are understood, and each source, resolution, and release group is kept apart.
+- **Embedded Greek detection** — reads the video container's own track metadata (Matroska or MP4) over a small ranged request and marks streams that already include Greek subtitles with `🇬🇷 Embedded`. Those streams join the Greek shortlist even when no subtitle file matched. Release-name signals such as `GRE`, `Greek subs`, or a 🇬🇷 flag are used as a fallback. Greek *dubbed audio* never counts as subtitles.
+- **Greek shortlist** — up to 12 best streams per title, identical playback URLs collapsed into one.
+- **Timing confirmations** — after checking playback once, save a delay for that exact file so the subtitles stay in sync every time.
+- **Subtitle providers** — SubDL, OpenSubtitles, and SubSource, with SRT delivered as UTF-8 WebVTT (ZIP packs included).
+- **Private by default** — install links carry a random access token, settings are stored with owner-only permissions, and passwords are kept as salted hashes.
 
-Use the Stremio Web site’s Chrome **Apps on device** permission if the site cannot reach a local add-on. After saving changes, refresh the movie or episode to see updated stream results. The install link stays the same when you edit settings or change the configuration password.
+## Run on a Mac
 
-Saved stream links appear in multiline boxes, one link per box. Use each API key’s eye button to reveal or hide its value. The server writes settings to `.settings.json` with owner-only permissions. The installation password is stored as a salted hash. If you forget it, open the host’s loopback Configure page to set a new one.
+1. Double-click **`Start.command`** and leave its Terminal window open. (Needs Node.js 22 or later — the copy bundled with ChatGPT on this Mac works.)
+2. Open **`http://127.0.0.1:7331/configure`** — or double-click `Configure.command`.
+3. Paste the install link of a Stremio add-on that supplies playable streams — from **Addons → Installed → Share addon**, or its own setup page. It looks like `https://example.com/manifest.json`. A second source fits in the optional field below.
+4. Enter at least one subtitle API key, pick your preferences, set a configuration password, and press **Save settings**.
+5. Click **Install in Stremio**, or **Copy install link** and paste it into **Stremio Web → Addons → Add addon**.
 
-## Private VPS deployment
+Get API keys here: [SubDL](https://subdl.com/api-doc) · [OpenSubtitles](https://www.opensubtitles.com/en/consumers) · [SubSource](https://subsource.net/api-docs)
 
-Run one instance per owner. Use the private install link to grant Stremio access to the instance, and unlock its Configure page with the password you choose. Keep the initial setup and password recovery available through SSH.
+**Good to know**
 
-1. On the VPS, install Node.js 22 or later, `unzip`, and [Caddy](https://caddyserver.com/docs/install). Point a hostname such as `addon.example.com` to the VPS. Run the app as an unprivileged user in a persistent directory. Keep port `7331` bound to loopback and open ports `80` and `443` for Caddy.
-2. For a fresh install, copy `.env.example` to `.env` and limit permissions with `chmod 600 .env`. Set the hostname used for the private install URL:
+- If Stremio Web cannot reach the local add-on, allow the Chrome **Apps on device** permission for the site.
+- After changing settings, refresh the movie or episode to see new results. The install link stays the same when settings or the password change.
+- Saved stream links go in multiline boxes, one link per box. The eye button next to each API key reveals or hides it.
+- Settings live in `.settings.json` with owner-only permissions. If you forget the configuration password, open the loopback Configure page on the host to set a new one.
+- The installed add-on's **Configure** button in Stremio unlocks your saved settings. Local installations can also open `http://127.0.0.1:7331/manifest.json` directly.
+
+## Host on a VPS
+
+Run one instance per owner. The private install link grants Stremio access; the password you choose unlocks its Configure page. Keep first-time setup and password recovery available through SSH.
+
+1. **Install** Node.js 22+, `unzip`, and [Caddy](https://caddyserver.com/docs/install) on the VPS. Point a hostname such as `addon.example.com` at it. Run the app as an unprivileged user in a persistent directory — keep port `7331` on loopback, open ports `80`/`443` for Caddy.
+2. **Configure** — copy `.env.example` to `.env`, then `chmod 600 .env`:
 
    ```dotenv
    HOST=127.0.0.1
@@ -52,7 +67,7 @@ Run one instance per owner. Use the private install link to grant Stremio access
    PUBLIC_URL=https://addon.example.com
    ```
 
-3. Configure Caddy to forward private installation routes over HTTPS. The server checks the generated install token and requires a password for editing settings. The root Configure page remains on loopback. [Caddy HTTPS setup](https://caddyserver.com/docs/automatic-https)
+3. **Route HTTPS** through Caddy. Only the generated install token paths are forwarded; everything else gets `404`, and the root Configure page stays on loopback. [Caddy HTTPS setup](https://caddyserver.com/docs/automatic-https)
 
    ```caddyfile
    addon.example.com {
@@ -69,21 +84,21 @@ Run one instance per owner. Use the private install link to grant Stremio access
    }
    ```
 
-4. Start the app from the project folder with `node --env-file=.env src/server.js` and keep it running with your service manager. From your computer, open an SSH tunnel and visit `http://127.0.0.1:7332/configure`. Save the stream links, subtitle keys, preferences, and configuration password. [OpenSSH port forwarding](https://man.openbsd.org/ssh.1)
+4. **Run** the app with `node --env-file=.env src/server.js` under your service manager. Then open an SSH tunnel and visit `http://127.0.0.1:7332/configure` to save stream links, API keys, preferences, and the configuration password. [OpenSSH port forwarding](https://man.openbsd.org/ssh.1)
 
    ```sh
    ssh -N -L 127.0.0.1:7332:127.0.0.1:7331 your-user@addon.example.com
    ```
 
-5. Use the **Install in Stremio** or **Copy install link** button on Configure. Check that the generated HTTPS manifest loads. Verify that the bare public `/manifest.json` and `/configure` return `404`, and the installed add-on’s **Configure** button opens the password prompt.
+5. **Install** with **Install in Stremio** or **Copy install link**. Check that the generated HTTPS manifest loads — and that the bare `/manifest.json` and `/configure` return `404`, while the installed add-on's **Configure** button opens the password prompt.
 
-The generated install URL contains a random access token and grants access to the streams returned by your configured providers. Keep it out of public posts, GitHub, and shared logs. Keep `.env`, `.settings.json`, and `.confirmations.json` on the VPS and in private backups. Review the staged files before publishing the repository. [GitHub ignored files](https://docs.github.com/en/get-started/git-basics/ignoring-files)
+**Keep private** — the generated install URL contains a random access token that grants access to your streams. Keep it out of public posts, GitHub, and shared logs, and keep proxy logs free of it. Store `.env`, `.settings.json`, `.confirmations.json`, `.probe-cache.json`, and `.installations/` on the VPS and in private backups only. [GitHub ignored files](https://docs.github.com/en/get-started/git-basics/ignoring-files)
 
 ## Shared Configure page
 
-To let other people install from one hosted site, deploy the VPS setup above with `PUBLIC_SIGNUP=1` in `.env`. On the public hostname, `/configure` opens a blank form. Each visitor enters their own stream add-on links and subtitle API keys, sets a password, and selects **Create install link**. They can install from the generated link and use **Configure** in Stremio to unlock their own settings. The host administrator can still use the loopback address through the SSH tunnel.
+To let other people install from one hosted site, deploy the VPS setup above with `PUBLIC_SIGNUP=1` in `.env`. On the public hostname, `/configure` opens a blank form: each visitor enters their own stream add-on links and subtitle API keys, sets a password, and selects **Create install link**. They install from the generated link and unlock their own settings with **Configure** in Stremio. The host administrator keeps using the loopback address through the SSH tunnel.
 
-Add this matcher to the same Caddy site, alongside the private installation matcher. Keep the fallback `404` handler.
+Add this block to the same Caddy site, next to the private installation matcher, keeping the fallback `404` handler:
 
 ```caddyfile
 @signup {
@@ -95,29 +110,41 @@ handle @signup {
 }
 ```
 
-Users of the shared page need stream add-on manifest URLs on public HTTPS hostnames. Local addresses, the Greek Sub Match hostname, and redirects from stream endpoints are excluded. The server validates and pins the public DNS address before connecting to each user-supplied stream source. Use VPS network rules to restrict outbound access to private infrastructure as an additional layer. [OWASP guidance on server-side requests](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
+Shared-page users must supply stream add-on manifest URLs on public HTTPS hostnames — local addresses, this add-on's own hostname, and redirecting stream endpoints are rejected. The server validates and pins the public DNS address before connecting to each user-supplied source. Add VPS network rules to block outbound access to private infrastructure as a second layer. [OWASP guidance on server-side requests](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
 
-Keep `.installations/` in private, persistent storage along with your other settings. It contains separate provider keys, salted password hashes, and timing confirmations for each installation. This mode is designed for one running Node process per data directory. It currently supports up to 200 installations and limits signup and stream request rates. Keep private install URLs out of proxy access logs.
+Keep `.installations/` in private, persistent storage with your other settings. It holds separate provider keys, salted password hashes, and timing confirmations per installation. This mode is designed for one Node process per data directory, supports up to 200 installations, and rate-limits signups and stream requests.
 
-## Shortlist and timing
+## Labels and timing
 
-The default **Greek shortlist** shows up to 12 matches and collapses identical playback URLs. If no Greek release matches, the shortlist shows a message that opens the title check. Choose **All streams, Greek matches first** in Configure to include the rest in the same list. Use **Exact and likely match label position** to place those labels at the start, after the first line, or at the end of stream details.
+Every marker in the stream details starts with the Greek flag. Here is what they mean:
 
-Streams that already carry Greek subtitles inside the video file are marked `🇬🇷 Embedded` and join the shortlist even when no release name matched. The add-on reads the container's own track metadata (Matroska or MP4) over a small ranged request and also trusts release-name signals such as `GRE`, `Greek subs`, or a 🇬🇷 flag. Dubbed Greek audio is not treated as subtitles. A stream can show both markers at once, for example `🇬🇷 Embedded · Exact match`.
+| Label | Meaning |
+| --- | --- |
+| `🇬🇷 Embedded` | Greek subtitles are already inside the video file — nothing to download |
+| `🇬🇷 Exact match` | A subtitle file with the exact release name is available |
+| `🇬🇷 Greek subtitles · Likely · …` | A probable release match (group, source, or resolution lines up) |
+| `🇬🇷 Video hash match` | The provider verified this subtitle against the file's video hash |
+| `🇬🇷 Confirmed timing` | You checked playback and saved the sync for this file |
 
-Open **Check a movie or episode** in Configure and paste a Stremio detail link, IMDb ID, or TMDB ID. The page shows the number of streams, the status of each configured subtitle provider, and the release details behind its best matches. After checking the timing in playback, find the same row by the short File ID shown in the Greek subtitle label and press **Timing is good**. Enter an optional delay in seconds. A positive number shows subtitles later. Use **Remove confirmation** to undo it.
+A stream can show two markers at once, for example `🇬🇷 Embedded · Exact match`. Use **Exact and likely match label position** in Configure to place the labels at the start, after the first line, or at the end of the stream details.
 
-Confirmed timings are saved locally in `.confirmations.json`. They apply to the identified playback file. The add-on uses a video hash, file name plus byte size, or exact playback source, depending on the metadata the source provides.
+**Stream list.** By default the **Greek shortlist** shows up to 12 streams with Greek subtitles and collapses identical playback URLs. When nothing matches, a message opens the title check instead. Choose **All streams, Greek matches first** to keep every stream in one list.
 
-## Provider behavior
+**Checking a title.** Open **Check a movie or episode** in Configure and paste a Stremio detail link, IMDb ID, or TMDB ID. You get the stream count, each subtitle provider's status, and the release details behind the best matches.
 
-OpenSubtitles uses its REST API and the anonymous download quota. The separately installed OpenSubtitles v3 add-on does not provide this matcher with an API key. If first-pass results yield no match, OpenSubtitles checks a second results page when available, or searches by a representative release filename. SubDL also tries the filename. OpenSubtitles hash lookups use hashes supplied by the stream add-on. The add-on serves SRT as UTF-8 WebVTT, including compatible files in SubDL and SubSource ZIP packs. SubSource searches by IMDb ID and uses Greek release names to match movies and episodes.
+**Saving a timing.** After playback, find the stream by the short File ID shown on its Greek subtitle label and press **Timing is good**. Enter an optional delay in seconds — a positive number shows the subtitles later, a negative number earlier. **Remove confirmation** undoes it. Confirmations are stored in `.confirmations.json` and apply to the identified playback file via its video hash, file name plus byte size, or exact playback source.
 
-The matcher supports IMDb and TMDB IDs, including AIOMetadata episode IDs such as `tmdb:123456:2:3`. If your source doesn’t return streams for a title’s ID, try its Cinemeta listing. Release metadata estimates timing compatibility. If a subtitle provider is unavailable, the other configured providers can still supply matches.
+## Subtitle providers
 
-## Checks
+- **SubDL** — searches by IMDb or TMDB ID, and retries with the release filename when needed. ZIP packs are scanned for the right episode.
+- **OpenSubtitles** — REST API on the anonymous download quota. (The separately installed *OpenSubtitles v3* add-on does not hand this matcher an API key.) Falls back to a second results page or a representative release filename, and uses video hashes supplied by the stream add-on for hash lookups.
+- **SubSource** — searches by IMDb ID using Greek release names, for both movies and episodes.
 
-Run `node --test` from this folder using Node.js 22 or later. Tests exercise local settings, stream ranking, ZIP episode selection, and simulated subtitle API search and downloads.
+All providers serve SRT as UTF-8 WebVTT. If one provider is unavailable, the others still supply matches. IMDb and TMDB IDs are supported, including AIOMetadata episode IDs such as `tmdb:123456:2:3` — if a source returns no streams for an ID, try its Cinemeta listing. Release metadata is used to estimate timing compatibility.
+
+## Development
+
+Run `node --test` from this folder with Node.js 22 or later. The tests cover local settings, stream ranking, ZIP episode selection, embedded-subtitle detection, and simulated subtitle API search and downloads.
 
 ## License
 
