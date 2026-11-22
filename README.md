@@ -1,4 +1,29 @@
-# Greek Sub Match for Stremio
+<p align="center">
+  <img src="assets/addon-icon.png" alt="Greek Sub Match icon" width="88" height="88">
+</p>
+
+<h1 align="center">Greek Sub Match for Stremio</h1>
+
+<p align="center">
+  Ranked subtitle matches, saved timings, and embedded Greek detection.<br>
+  Right inside Stremio.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white" alt="Node.js 22 or newer">
+  <img src="https://img.shields.io/badge/Stremio-Stream_Add--on-8e5ee8" alt="Stremio stream add-on">
+  <img src="https://img.shields.io/badge/Greek-Subtitles-0d6efd" alt="Greek subtitles">
+</p>
+
+<p align="center">
+  <a href="#start-and-configure-on-a-mac">Run on a Mac</a> ·
+  <a href="#private-vps-deployment">Hosting</a> ·
+  <a href="#shared-configure-page">Shared page</a> ·
+  <a href="#shortlist-and-timing">Shortlist</a> ·
+  <a href="#provider-behavior">Providers</a> ·
+  <a href="#checks">Checks</a> ·
+  <a href="#license">License</a>
+</p>
 
 Greek Sub Match compares subtitle release names with the streams for the same movie or episode. It ranks saved confirmations and video hash matches ahead of exact filenames and likely release matches. It understands shared releases such as `1080/720p YTS.AG` and keeps each source, resolution, and group together when a listing names separate versions.
 
