@@ -1,0 +1,12 @@
+{
+  "name": "stremio-greek-sub-match",
+  "version": "0.3.1",
+  "private": true,
+  "type": "module",
+  "description": "Rank Stremio streams by Greek subtitle release matches",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "test": "node --test"
+  }
+}

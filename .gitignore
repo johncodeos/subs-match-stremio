@@ -1,0 +1,9 @@
+.env
+*.log
+.DS_Store
+.settings.json
+..settings.json.*.tmp
+.confirmations.json
+..confirmations.json.*.tmp
+
+.installations/
