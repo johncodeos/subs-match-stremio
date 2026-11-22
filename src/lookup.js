@@ -5,6 +5,7 @@ import { bestMatch, parseVideoId, videoFilenames, videoHash } from './match.js';
 
 export const shortlistLimit = 12;
 const probeBudget = 16;
+const probeConcurrency = 6;
 
 function rowScore({ matches, embedded }) {
   return Math.max(matches[0]?.score ?? 0, embedded ? 2 : 0);
@@ -23,10 +24,12 @@ async function probeStreams(streams, probe) {
     candidates.push(stream);
     if (candidates.length >= probeBudget) break;
   }
-  await Promise.all(candidates.map(async (stream) => {
-    const value = await probe(stream);
-    if (value !== undefined) results.set(stream.url, value);
-  }));
+  for (let index = 0; index < candidates.length; index += probeConcurrency) {
+    await Promise.all(candidates.slice(index, index + probeConcurrency).map(async (stream) => {
+      const value = await probe(stream);
+      if (value !== undefined) results.set(stream.url, value);
+    }));
+  }
   return results;
 }
 

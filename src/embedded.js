@@ -301,31 +301,29 @@ export function openProbeCache(file) {
 }
 
 export function createEmbeddedProbe({ fetcher = fetch, head = headLimit, tail = tailLimit, cache } = {}) {
+  // Resolves true/false when the container is readable and undefined otherwise.
+  // Network failures reject so they are retried instead of cached as "unknown".
   const load = async (stream) => {
-    try {
-      const url = typeof stream?.url === 'string' ? stream.url : '';
-      if (!/^https?:\/\//i.test(url) || /\.m3u8(\?|$)/i.test(url)) return undefined;
-      const headers = stream.behaviorHints?.proxyHeaders?.request;
-      const first = await fetchRange(url, fetcher, `bytes=0-${head - 1}`, head, headers, false);
-      let { tracks, known, needsTail, moovStart, isSubtitle } = readContainer(first);
-      if (!known && moovStart != null) {
-        const part = await fetchRange(url, fetcher, `bytes=${moovStart}-${moovStart + tail - 1}`, tail, headers, true);
-        if (part) {
-          const more = readContainer(part);
-          if (more.known) ({ tracks, known, isSubtitle } = more);
-        }
+    const url = typeof stream?.url === 'string' ? stream.url : '';
+    if (!/^https?:\/\//i.test(url) || /\.m3u8(\?|$)/i.test(url)) return undefined;
+    const headers = stream.behaviorHints?.proxyHeaders?.request;
+    const first = await fetchRange(url, fetcher, `bytes=0-${head - 1}`, head, headers, false);
+    let { tracks, known, needsTail, moovStart, isSubtitle } = readContainer(first);
+    if (!known && moovStart != null) {
+      const part = await fetchRange(url, fetcher, `bytes=${moovStart}-${moovStart + tail - 1}`, tail, headers, true);
+      if (part) {
+        const more = readContainer(part);
+        if (more.known) ({ tracks, known, isSubtitle } = more);
       }
-      if (!known && needsTail) {
-        const last = await fetchRange(url, fetcher, `bytes=-${tail}`, tail, headers, true);
-        const parsed = last && findMoov(last);
-        if (parsed) ({ tracks, known, isSubtitle } = { tracks: parsed, known: true, isSubtitle: (track) => track.subtitle });
-      }
-      const result = known ? tracks.filter(isSubtitle).some(greekTrack) : undefined;
-      if (cache && typeof result === 'boolean') cache.set(url, result);
-      return result;
-    } catch {
-      return undefined;
     }
+    if (!known && needsTail) {
+      const last = await fetchRange(url, fetcher, `bytes=-${tail}`, tail, headers, true);
+      const parsed = last && findMoov(last);
+      if (parsed) ({ tracks, known, isSubtitle } = { tracks: parsed, known: true, isSubtitle: (track) => track.subtitle });
+    }
+    const result = known ? tracks.filter(isSubtitle).some(greekTrack) : undefined;
+    if (cache && typeof result === 'boolean') cache.set(url, result);
+    return result;
   };
   const cachedLoad = cached(load, { ttl: 10 * 60_000, capacity: 200 });
   return (stream) => {
@@ -333,6 +331,6 @@ export function createEmbeddedProbe({ fetcher = fetch, head = headLimit, tail = 
     if (!url) return Promise.resolve(undefined);
     const saved = cache?.get(url);
     if (saved !== undefined) return Promise.resolve(saved);
-    return cachedLoad(url, stream);
+    return cachedLoad(url, stream).catch(() => undefined);
   };
 }

@@ -147,6 +147,19 @@ test('probing a host that fails or serves no container leaves the answer unknown
   assert.equal(await failing({ url: 'https://files.example/movie.mkv' }), undefined);
 });
 
+test('a failed probe is retried instead of cached as unknown', async () => {
+  let failures = 0;
+  const probe = createEmbeddedProbe({ fetcher: async () => {
+    failures += 1;
+    if (failures === 1) throw new Error('transient network error');
+    return new Response(mkv(mkvTrack(0x11, 'gre')), { status: 200 });
+  } });
+  const stream = { url: 'https://files.example/movie.mkv' };
+  assert.equal(await probe(stream), undefined);
+  assert.equal(await probe(stream), true);
+  assert.equal(failures, 2);
+});
+
 test('readContainer reports what it could not identify', () => {
   assert.equal(readContainer(Buffer.alloc(0)).known, false);
   assert.equal(readContainer(mkv(mkvTrack(0x11, 'gre'))).tracks.length, 1);
