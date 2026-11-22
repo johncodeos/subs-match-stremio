@@ -101,7 +101,8 @@ export function diagnosticsName(stream) {
   return releaseFilename(stream) || 'Stream with no filename';
 }
 
-export function createLookup({ config, providers, fetcher, confirmations, logger, cache, probe = createEmbeddedProbe({ fetcher, cache }) }) {
+export function createLookup({ config, providers, fetcher, confirmations, logger, cache, probeFetcher = fetcher,
+  probe = createEmbeddedProbe({ fetcher: probeFetcher, cache }) }) {
   const streamsByTitle = cached(
     (type, id) => Promise.allSettled(config.manifestUrls.map((url) => fetchJson(upstreamStreamUrl(url, type, id), fetcher))),
     { ttl: 20_000, capacity: 24 }

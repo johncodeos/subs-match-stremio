@@ -27,7 +27,7 @@ export function publicSourceAddress({ address, family }) {
   return family === 6 && globalV6.check(address, 'ipv6') && !reserved.check(address, 'ipv6');
 }
 
-export async function fetchPublicSource(url, { signal, headers } = {}) {
+async function requestPublic(url, { signal, headers }) {
   if (!publicSourceUrl(url)) throw new Error('Shared stream sources require a public HTTPS hostname.');
   const addresses = await lookup(url.hostname, { all: true });
   signal?.throwIfAborted();
@@ -40,16 +40,46 @@ export async function fetchPublicSource(url, { signal, headers } = {}) {
     const outgoing = request(url, {
       agent: false, signal, family: destination.family, headers,
       lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family)
-    }, (incoming) => {
-      const status = incoming.statusCode;
-      if (status !== 200) {
-        incoming.destroy();
-        reject(new Error(`Stream source HTTP ${status}`));
-        return;
-      }
-      resolve(new Response(Readable.toWeb(incoming), { status }));
-    });
+    }, resolve);
     outgoing.once('error', reject);
     outgoing.end();
   });
+}
+
+function sourceResponse(incoming) {
+  const headers = {};
+  if (incoming.headers['content-range']) headers['content-range'] = incoming.headers['content-range'];
+  return new Response(Readable.toWeb(incoming), { status: incoming.statusCode, headers });
+}
+
+export async function fetchPublicSource(url, { signal } = {}) {
+  const incoming = await requestPublic(url, { signal });
+  if (incoming.statusCode === 200) return sourceResponse(incoming);
+  incoming.destroy();
+  throw new Error(`Stream source HTTP ${incoming.statusCode}`);
+}
+
+const mediaHeaderNames = ['range', 'referer', 'origin', 'user-agent', 'authorization', 'cookie'];
+const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+const mediaRedirectLimit = 4;
+
+export async function fetchPublicMedia(url, { signal, headers } = {}, send = requestPublic) {
+  const originalHeaders = new Headers(headers);
+  let requestHeaders = Object.fromEntries(mediaHeaderNames.flatMap((name) =>
+    originalHeaders.has(name) ? [[name, originalHeaders.get(name)]] : []));
+  if (!requestHeaders.range) throw new Error('Media probes require a byte range.');
+
+  for (let redirects = 0; ; redirects += 1) {
+    const incoming = await send(url, { signal, headers: requestHeaders });
+    const { statusCode, headers: { location } } = incoming;
+    if (statusCode === 200 || statusCode === 206) return sourceResponse(incoming);
+    incoming.destroy();
+    if (!redirectStatuses.has(statusCode) || !location || redirects === mediaRedirectLimit) {
+      throw new Error(`Media probe HTTP ${statusCode}`);
+    }
+    const next = new URL(location, url);
+    // A CDN redirect needs the byte range, but not credentials from the original host.
+    if (next.origin !== url.origin) requestHeaders = { range: requestHeaders.range };
+    url = next;
+  }
 }

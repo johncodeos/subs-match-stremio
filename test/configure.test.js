@@ -377,6 +377,7 @@ test('public Configure creates separate installations with independent settings 
   const sources = [];
   const keys = [];
   const server = createAddon(initial, { settings: ownerSettings, profiles,
+    publicProbeFetcher: async () => new Response(null, { status: 404 }),
     publicSourceFetcher: async (url) => {
       if (url.pathname.endsWith('.json')) sources.push(url.hostname);
       return Response.json({ streams: [{ url: `https://${url.hostname}/video.mp4`,

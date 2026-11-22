@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { test } from 'node:test';
 import {
   createEmbeddedProbe, embeddedGreekTracks, filenameGreekHint, openProbeCache, readContainer
 } from '../src/embedded.js';
+import { fetchPublicMedia } from '../src/public-sources.js';
 
 function vint(value) {
   const bytes = [];
@@ -138,6 +140,31 @@ test('probes MP4 files whose moov sits at the end', async () => {
   assert.equal(await probe({ url: 'https://files.example/movie.mp4' }), true);
   assert.equal(calls.length, 2);
   assert.equal(calls[1].options.headers.Range, 'bytes=-524288');
+});
+
+test('reads embedded subtitles through a shared media CDN redirect', async () => {
+  const file = mkv(mkvTrack(0x11, 'gre'));
+  const redirect = Object.assign(Readable.from([]), {
+    statusCode: 302, headers: { location: 'https://cdn.example/video.mkv' }
+  });
+  const range = Object.assign(Readable.from([file]), {
+    statusCode: 206, headers: { 'content-range': `bytes 0-${file.length - 1}/${file.length}` }
+  });
+  const calls = [];
+  const fetcher = (url, options) => fetchPublicMedia(url, options, async (destination, request) => {
+    calls.push([destination.hostname, request.headers]);
+    return calls.length === 1 ? redirect : range;
+  });
+  const probe = createEmbeddedProbe({ fetcher });
+  assert.equal(await probe({
+    url: 'https://source.example/video.mkv',
+    behaviorHints: { proxyHeaders: { request: { Authorization: 'Bearer fixture' } } }
+  }), true);
+  assert.deepEqual(calls, [
+    ['source.example', { range: 'bytes=0-65535', authorization: 'Bearer fixture' }],
+    ['cdn.example', { range: 'bytes=0-65535' }]
+  ]);
+  assert.equal(redirect.destroyed, true);
 });
 
 test('probing a host that fails or serves no container leaves the answer unknown', async () => {

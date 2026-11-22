@@ -10,7 +10,7 @@ import { createLookup, emptyResult, subtitleSelection } from './lookup.js';
 import { matchLabels, streamMatchDescription } from './match.js';
 import { createOpenSubtitles } from './opensubtitles.js';
 import { openProfiles } from './profiles.js';
-import { fetchPublicSource } from './public-sources.js';
+import { fetchPublicMedia, fetchPublicSource } from './public-sources.js';
 import { isLive, openSettings } from './settings.js';
 import { createSubdlDownload, createSubdlSearch } from './subdl.js';
 import { createSubsource } from './subsource.js';
@@ -87,7 +87,8 @@ function write(res, status, body, type = 'application/json; charset=utf-8') {
 }
 
 export function createAddon(initial, {
-  fetcher = fetch, publicSourceFetcher = fetchPublicSource, logger = console, settings, confirmations, profiles, probe, cache
+  fetcher = fetch, publicSourceFetcher = fetchPublicSource, publicProbeFetcher = fetchPublicMedia,
+  logger = console, settings, confirmations, profiles, probe, cache
 } = {}) {
   const { publicUrl } = initial;
   const secret = randomBytes(32);
@@ -107,11 +108,14 @@ export function createAddon(initial, {
     let requestCount = 0;
     let resetsAt = 0;
     const sourceFetcher = token ? publicSourceFetcher : fetcher;
+    const probeFetcher = token ? publicProbeFetcher : fetcher;
     function getRuntime() {
       const config = sourceSettings?.get() ?? initial;
       if (runtime?.config !== config) {
         const providers = getProviders(config, fetcher);
-        const lookup = createLookup({ config, providers, confirmations: timing, fetcher: sourceFetcher, logger, probe, cache });
+        const lookup = createLookup({
+          config, providers, confirmations: timing, fetcher: sourceFetcher, probeFetcher, logger, probe, cache
+        });
         runtime = { config, providers, lookup };
       }
       return runtime;
