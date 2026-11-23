@@ -69,10 +69,28 @@ test('SubDL pack handling only selects the requested Greek episode', () => {
     release_name: '1080p - 720p YTS.AG',
     url: '/subtitle/123-456.zip',
     unpack_files: [file(2, 'EL'), file(3, 'EN'), file(3, 'EL'), file(4, 'EL')]
-  }], episode);
+  }], episode, ['el']);
   assert.equal(result.path, '/subtitle/123/file3-EL');
+  assert.equal(result.lang, 'el');
   assert.equal(others.length, 0);
-  assert.equal(processSubdlResults([{ url: '/subtitle/123-456.zip', season: 2, episode: 4, language: 'EL', name: '1080p YTS.AG.zip' }], episode).length, 0);
+  assert.equal(processSubdlResults([{ url: '/subtitle/123-456.zip', season: 2, episode: 4, language: 'EL', name: '1080p YTS.AG.zip' }], episode, ['el']).length, 0);
+});
+
+test('SubDL pack handling keeps each selected language and tags it', () => {
+  const file = (episodeNumber, language) => ({
+    episode: episodeNumber,
+    name: `Series.S02E0${episodeNumber}.1080p-YTS.AG.srt`,
+    url: `/subtitle/123/file${episodeNumber}-${language}`,
+    language
+  });
+  const results = processSubdlResults([{
+    season: 2, episode_from: 1, episode_end: 8, full_season: true,
+    release_name: '1080p - 720p YTS.AG',
+    url: '/subtitle/123-456.zip',
+    unpack_files: [file(3, 'EL'), file(3, 'French'), file(3, 'DE')]
+  }], episode, ['el', 'fr']);
+  assert.deepEqual(results.map(({ path, lang }) => [path, lang]).sort(),
+    [['/subtitle/123/file3-EL', 'el'], ['/subtitle/123/file3-French', 'fr']]);
 });
 
 test('converts Windows-1253 Greek subtitles to UTF-8 WebVTT', () => {
@@ -81,6 +99,15 @@ test('converts Windows-1253 Greek subtitles to UTF-8 WebVTT', () => {
     Buffer.from('cae1ebe7ecddf1e1', 'hex')
   ]);
   assert.match(toWebVtt(input), /^WEBVTT\n\n1\n00:00:01\.000 --> 00:00:02\.500\nΚαλημέρα/m);
+});
+
+test('converts Windows-1251 Russian subtitles using the language encoding', () => {
+  // "Привет" in windows-1251
+  const input = Buffer.concat([
+    Buffer.from('1\n00:00:01,000 --> 00:00:02,500\n'),
+    Buffer.from('cff0e8e2e5f2', 'hex')
+  ]);
+  assert.match(toWebVtt(input, 'ru'), /^WEBVTT\n\n1\n00:00:01\.000 --> 00:00:02\.500\nПривет/m);
 });
 
 test('parses shared resolutions and keeps individually named releases separate', () => {

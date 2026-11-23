@@ -1,25 +1,28 @@
 import { fileIdentity, playbackIdentity } from './confirmations.js';
-import { createEmbeddedProbe, filenameGreekHint } from './embedded.js';
+import { createEmbeddedProbe, filenameLanguageHints } from './embedded.js';
 import { cached, fetchJson } from './http.js';
+import { namesFor } from './languages.js';
 import { bestMatch, parseVideoId, videoFilenames, videoHash } from './match.js';
 
 export const shortlistLimit = 12;
 const probeBudget = 16;
 const probeConcurrency = 6;
 
-function rowScore({ matches, embedded }) {
-  return Math.max(matches[0]?.score ?? 0, embedded ? 2 : 0);
+function rowScore({ matches, embeddedLangs }) {
+  return Math.max(matches[0]?.score ?? 0, embeddedLangs.length ? 2 : 0);
 }
 
 // Kick off container probes as soon as stream URLs are known so they overlap the
 // subtitle provider searches. The budget covers the top streams by upstream order.
-async function probeStreams(streams, probe) {
+async function probeStreams(streams, probe, languages) {
   const results = new Map();
   const seen = new Set();
   const candidates = [];
   for (const stream of streams) {
     const url = typeof stream?.url === 'string' ? stream.url : '';
-    if (!url || seen.has(url) || filenameGreekHint(stream)) continue;
+    if (!url || seen.has(url)) continue;
+    const hinted = filenameLanguageHints(stream);
+    if (languages.every((code) => hinted.includes(code))) continue;
     seen.add(url);
     candidates.push(stream);
     if (candidates.length >= probeBudget) break;
@@ -33,9 +36,11 @@ async function probeStreams(streams, probe) {
   return results;
 }
 
-function markEmbedded(rows, probed) {
+function markEmbedded(rows, probed, languages) {
   for (const row of rows) {
-    row.embedded = filenameGreekHint(row.stream) || probed.get(row.stream.url) === true;
+    const hinted = filenameLanguageHints(row.stream);
+    const found = probed.get(row.stream.url) ?? [];
+    row.embeddedLangs = [...new Set([...hinted, ...found])].filter((code) => languages.includes(code));
   }
   rows.sort((a, b) => rowScore(b) - rowScore(a));
 }
@@ -52,10 +57,18 @@ function rankedRows(streams, sets, video, confirmations) {
     const confirmed = fileKey && confirmations.get(fileKey);
     const matches = sets.flatMap(({ provider, candidates }) => {
       if (confirmed?.provider === provider.id) {
-        return [{ provider, score: 4, release: confirmed.release, selection: confirmed }];
+        return [{ provider, score: 4, release: confirmed.release, lang: confirmed.lang ?? 'el', selection: confirmed }];
       }
-      const match = bestMatch(stream, candidates, video);
-      return match ? [{ ...match, provider }] : [];
+      const byLang = new Map();
+      for (const candidate of candidates) {
+        const group = byLang.get(candidate.lang) ?? [];
+        group.push(candidate);
+        byLang.set(candidate.lang, group);
+      }
+      return [...byLang.values()].flatMap((group) => {
+        const match = bestMatch(stream, group, video);
+        return match ? [{ ...match, provider }] : [];
+      });
     }).sort((a, b) => b.score - a.score);
     return { stream, fileKey, matches };
   }).sort((a, b) => (b.matches[0]?.score ?? 0) - (a.matches[0]?.score ?? 0));
@@ -70,15 +83,16 @@ function rankedRows(streams, sets, video, confirmations) {
   });
 }
 
-export function subtitleSelection({ subtitle, release, provider, selection }, video) {
+export function subtitleSelection({ subtitle, release, provider, selection, lang }, video) {
   if (selection) return selection;
+  const code = lang ?? subtitle.lang;
   if (provider.id === 'subdl') {
-    return { provider: provider.id, path: subtitle.path, single: subtitle.single, release, video };
+    return { provider: provider.id, path: subtitle.path, single: subtitle.single, release, lang: code, video };
   }
   if (provider.id === 'subsource') {
-    return { provider: provider.id, fileId: subtitle.fileId, single: subtitle.single, release, video };
+    return { provider: provider.id, fileId: subtitle.fileId, single: subtitle.single, release, lang: code, video };
   }
-  return { provider: provider.id, fileId: subtitle.fileId, release };
+  return { provider: provider.id, fileId: subtitle.fileId, release, lang: code };
 }
 
 function mergeCandidates(set, extra) {
@@ -103,6 +117,7 @@ export function diagnosticsName(stream) {
 
 export function createLookup({ config, providers, fetcher, confirmations, logger, cache, probeFetcher = fetcher,
   probe = createEmbeddedProbe({ fetcher: probeFetcher, cache }) }) {
+  const languages = config.languages ?? [];
   const streamsByTitle = cached(
     (type, id) => Promise.allSettled(config.manifestUrls.map((url) => fetchJson(upstreamStreamUrl(url, type, id), fetcher))),
     { ttl: 20_000, capacity: 24 }
@@ -123,7 +138,7 @@ export function createLookup({ config, providers, fetcher, confirmations, logger
     const usable = upstreams.filter((result) => result.status === 'fulfilled' && Array.isArray(result.value?.streams));
     const streams = usable.flatMap((result) => result.value.streams).filter((stream) => stream && typeof stream === 'object');
     const upstreamFailures = upstreams.length - usable.length;
-    const probing = probeStreams(streams, probe);
+    const probing = probeStreams(streams, probe, languages);
     const sets = await setsPending;
     if (upstreamFailures) logger.warn('A stream add-on could not return results.');
     if (sets.some((set) => !set.available)) logger.warn('A subtitle provider could not return results.');
@@ -152,25 +167,30 @@ export function createLookup({ config, providers, fetcher, confirmations, logger
       if (searchedMore) rows = rankedRows(streams, sets, video, confirmations);
     }
 
-    markEmbedded(rows, await probing);
+    markEmbedded(rows, await probing, languages);
 
-    const matchedRows = rows.filter(({ matches, embedded }) => matches.length > 0 || embedded);
+    const matchedRows = rows.filter(({ matches, embeddedLangs }) => matches.length > 0 || embeddedLangs.length);
     const selected = config.shortlist !== false ? matchedRows.slice(0, shortlistLimit) : rows;
-    return { video, rows, selected, matchedRows, upstreamFailures, sets, searchedMore, sourceCount: streams.length };
+    return { video, rows, selected, matchedRows, upstreamFailures, sets, searchedMore, sourceCount: streams.length, languages };
   };
 }
 
 export function emptyResult(report) {
+  const one = report.languages?.length === 1 ? namesFor(report.languages) : null;
   if (!report.sourceCount) {
     return report.upstreamFailures
       ? { title: 'Stream source unavailable', detail: 'A stream source could not be reached.' }
       : { title: 'No streams available', detail: 'Your stream sources returned no streams.' };
   }
   if (report.upstreamFailures || report.sets.some(({ available, extraFailed }) => !available || extraFailed)) {
-    return { title: 'Greek match check incomplete', detail: 'No matches found in the available results. A provider search failed.' };
+    return { title: 'Match check incomplete', detail: 'No matches found in the available results. A provider search failed.' };
   }
   if (report.sets.some(({ candidates }) => candidates.length)) {
-    return { title: 'No Greek subtitle match', detail: 'Greek subtitles were found for other releases. No available stream matched their release details.' };
+    return one
+      ? { title: `No ${one} subtitle match`, detail: `${one} subtitles were found for other releases. No available stream matched their release details.` }
+      : { title: 'No subtitle match', detail: 'Subtitles in your languages were found for other releases. No available stream matched their release details.' };
   }
-  return { title: 'No Greek subtitles found', detail: 'Your subtitle providers returned no usable Greek subtitles for this title.' };
+  return one
+    ? { title: `No ${one} subtitles found`, detail: `Your subtitle providers returned no usable ${one} subtitles for this title.` }
+    : { title: 'No subtitles found', detail: 'Your subtitle providers returned no usable subtitles in your languages for this title.' };
 }

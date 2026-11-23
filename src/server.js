@@ -6,6 +6,7 @@ import { createConfigureHandler, createSignupHandler, localOrigin } from './conf
 import { openConfirmations, shiftVtt } from './confirmations.js';
 import { installPath } from './installation.js';
 import { openProbeCache } from './embedded.js';
+import { languages } from './languages.js';
 import { createLookup, emptyResult, subtitleSelection } from './lookup.js';
 import { matchLabels, streamMatchDescription } from './match.js';
 import { createOpenSubtitles } from './opensubtitles.js';
@@ -22,10 +23,10 @@ const iconPath = '/addon-icon.png';
 const icon = readFileSync(new URL('../assets/addon-icon.png', import.meta.url));
 
 const manifest = {
-  id: 'local.stremio.greek-sub-match',
+  id: 'local.stremio.subs-match',
   version: pkg.version,
-  name: 'Greek Sub Match',
-  description: 'Playable streams ranked by available Greek subtitle release matches.',
+  name: 'Subs Match',
+  description: 'Playable streams ranked by available subtitle release matches in your languages.',
   resources: ['stream'],
   types: ['movie', 'series'],
   idPrefixes: ['tt', 'tmdb:'],
@@ -34,27 +35,29 @@ const manifest = {
 };
 
 function renderStream(row, video, trackUrl, matchLabelPosition) {
-  const { stream, matches, embedded } = row;
-  if (!matches.length && !embedded) return stream;
+  const { stream, matches, embeddedLangs } = row;
+  if (!matches.length && !embeddedLangs.length) return stream;
 
   const tracks = matches.map((match) => {
+    const lang = languages[match.lang] ?? languages.el;
     const url = trackUrl(subtitleSelection(match, video));
-    const id = 'greek-' + createHash('sha256').update(url).digest('hex').slice(0, 24);
-    const label = ['Ελληνικά', match.provider.name, row.fileKey?.slice(0, 8).toUpperCase(), matchLabels[match.score]].filter(Boolean).join(' · ');
-    return { id, lang: 'gre', label, url };
+    const id = 'sub-' + createHash('sha256').update(url).digest('hex').slice(0, 24);
+    const label = [lang.native, match.provider.name, row.fileKey?.slice(0, 8).toUpperCase(), matchLabels[match.score]].filter(Boolean).join(' · ');
+    return { id, lang: lang.iso6392, label, url };
   });
   const bestMatch = matches[0];
   // Stremio treats title as an alias for description and rejects streams containing both.
   const { title, ...original } = stream;
-  const description = streamMatchDescription(original.description ?? title, bestMatch, matchLabelPosition, embedded);
+  const description = streamMatchDescription(original.description ?? title, bestMatch, matchLabelPosition, embeddedLangs);
   const subtitles = Array.isArray(original.subtitles) ? original.subtitles : [];
   return { ...original, description, subtitles: [...subtitles, ...tracks] };
 }
 
 function getProviders(config, fetcher) {
   const providers = [];
+  const selected = config.languages ?? [];
   if (config.apiKey) {
-    const search = createSubdlSearch(config.apiKey, fetcher);
+    const search = createSubdlSearch(config.apiKey, selected, fetcher);
     providers.push({
       id: 'subdl',
       name: 'SubDL',
@@ -66,20 +69,26 @@ function getProviders(config, fetcher) {
   if (config.openSubtitlesKey) providers.push({
     id: 'opensubtitles',
     name: 'OpenSubtitles',
-    ...createOpenSubtitles(config.openSubtitlesKey, fetcher)
+    ...createOpenSubtitles(config.openSubtitlesKey, selected, fetcher)
   });
   if (config.subsourceKey) providers.push({
     id: 'subsource',
     name: 'SubSource',
-    ...createSubsource(config.subsourceKey, fetcher)
+    ...createSubsource(config.subsourceKey, selected, fetcher)
   });
   return providers;
 }
 
 function write(res, status, body, type = 'application/json; charset=utf-8') {
+  const cors = {
+    'Access-Control-Allow-Origin': res.req.headers.origin && /^https?:\/\//.test(res.req.headers.origin) ? res.req.headers.origin : '*',
+    'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Allow-Credentials': 'true',
+    'Vary': 'Origin'
+  };
   res.writeHead(status, {
     'Content-Type': type,
-    'Access-Control-Allow-Origin': '*',
+    ...cors,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff'
   });
@@ -154,6 +163,7 @@ export function createAddon(initial, {
   const signup = profiles && createSignupHandler(profiles, register, logger);
 
   return createServer(async (req, res) => {
+    console.log('REQ', req.method, req.url.split('?')[0]);
     let url, path;
     try {
       url = new URL(req.url, publicUrl);
@@ -201,10 +211,14 @@ export function createAddon(initial, {
       return context.configure.handle(req, res, url, prefix ? new URL(baseUrl) : null);
     }
     if (req.method === 'OPTIONS') {
+      const origin = req.headers.origin;
       res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': origin && /^https?:\/\//.test(origin) ? origin : '*',
+        'Access-Control-Allow-Private-Network': 'true',
+        'Access-Control-Allow-Credentials': 'true',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || 'Content-Type',
+        'Vary': 'Origin'
       });
       return res.end();
     }
@@ -246,14 +260,14 @@ export function createAddon(initial, {
         const query = new URLSearchParams({ id });
         // Stremio hides add-on groups that have zero entries. Keep the message as an external link.
         streams.push({
-          name: 'Greek Sub Match',
+          name: 'Subs Match',
           description: title + '\nCheck this title for details.',
           externalUrl: `${baseUrl}/configure/check?${query}`
         });
       }
       return write(res, 200, { streams });
     } catch {
-      logger.warn('Greek Sub Match could not serve the requested resource.');
+      logger.warn('Subs Match could not serve the requested resource.');
       return write(res, 502, { error: 'The requested resource could not be loaded' });
     }
   });
@@ -274,7 +288,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exitCode = 1;
     });
     server.listen(config.port, config.host, () => {
-      console.log(`Greek Sub Match (${isLive(config) ? 'live' : 'setup needed'})`);
+      console.log(`Subs Match (${isLive(config) ? 'live' : 'setup needed'})`);
       console.log(`Stremio manifest: ${config.publicUrl}/manifest.json`);
       console.log(`Configure: ${config.publicUrl}/configure`);
     });

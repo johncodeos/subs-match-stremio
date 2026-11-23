@@ -66,7 +66,7 @@ test('local settings are saved privately, applied in place, and survive a restar
   assert.equal(page.headers.get('Referrer-Policy'), 'same-origin');
   assert.match(page.headers.get('Content-Security-Policy'), /frame-ancestors 'none'/);
   const html = await page.text();
-  assert.match(html, /<h1>Greek Sub Match<\/h1>/);
+  assert.match(html, /<h1>Subs Match<\/h1>/);
   assert.match(html, /<img src="\/addon-icon\.png"/);
   assert.match(page.headers.get('Content-Security-Policy'), /img-src 'self'/);
   assert.match(html, /OpenSubtitles API key/);
@@ -76,7 +76,7 @@ test('local settings are saved privately, applied in place, and survive a restar
   assert.match(html, /<textarea id="STREAM_ADDON_MANIFEST_2" name="STREAM_ADDON_MANIFEST_2" rows="1" wrap="soft"/);
   assert.doesNotMatch(html, /aria-controls="STREAM_ADDON_MANIFEST(?:_2)?"/);
   assert.match(html, /<input id="SUBSOURCE_API_KEY" name="SUBSOURCE_API_KEY" type="password"/);
-  assert.match(html, /Greek shortlist/);
+  assert.match(html, /Matched shortlist/);
   assert.match(html, /<option value="end" selected>End<\/option>/);
   assert.match(html, /Stream preview/);
   assert.match(html, /Stream sources <span class="required-mark" aria-hidden="true">\*<\/span>/);
@@ -84,7 +84,8 @@ test('local settings are saved privately, applied in place, and survive a restar
   assert.doesNotMatch(html, /Clear a field and save/);
   assert.match(html, /data-saved="true" placeholder="••••••••••••"/);
   assert.match(html, /aria-label="Show SubDL API key"/);
-  assert.doesNotMatch(html, /legacy-subdl-secret|type="checkbox"/);
+  assert.doesNotMatch(html, /legacy-subdl-secret/);
+  assert.match(html, /<input type="checkbox" name="LANGUAGES" value="el" checked>/);
   assert.match(page.headers.get('Content-Security-Policy'), /script-src 'self'; connect-src 'self'/);
   const script = await fetch(origin + '/configure/fields.js');
   assert.equal(script.status, 200);
@@ -260,7 +261,7 @@ test('title check remembers and removes a user-confirmed offset for the exact pl
   assert.match(await (await fetch(origin + removed.headers.get('Location'))).text(), /Timing confirmation removed/);
   ({ streams } = await getStreams());
   assert.equal(streams.length, 1);
-  assert.match(streams[0].description, /No Greek subtitles found/);
+  assert.match(streams[0].description, /No Greek subtitles found|No subtitles found/);
   assert.equal(streams[0].externalUrl, publicUrl + '/configure/check?id=tt1234567');
   assert.equal(streams[0].url, undefined);
 });

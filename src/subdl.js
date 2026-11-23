@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { cached, fetchBytes, fetchJson } from './http.js';
+import { languages, matchLanguage } from './languages.js';
 import { episodeMatches, parseEpisode, releaseKey } from './match.js';
 
 const unzip = promisify(execFile);
@@ -11,7 +12,6 @@ const searchUrl = 'https://api.subdl.com/api/v1/subtitles';
 const downloadOrigin = 'https://dl.subdl.com';
 const maxSubtitle = 1024 * 1024;
 const supportedFile = /\.(?:srt|vtt)$/i;
-const greek = /^(?:el|gre|ell|greek)$/i;
 
 function downloadPath(value) {
   if (typeof value !== 'string' || !value) return null;
@@ -50,15 +50,16 @@ function scopeFor(row, video, names) {
   return { allowed: single || (season === video.season && from > 0 && end >= from), single };
 }
 
-export function processSubdlResults(rows, video) {
+export function processSubdlResults(rows, video, selected) {
   const candidates = [];
   for (const row of rows ?? []) {
     if (!row || typeof row !== 'object') continue;
     const direct = [];
     const files = Array.isArray(row.unpack_files) ? row.unpack_files : [];
     for (const file of files) {
-      const language = file?.language || file?.lang || row.language || row.lang;
-      if (!file || (language && !greek.test(language)) || !supportedFile.test(file.name || `.${file.format}`)) continue;
+      const rawLanguage = file?.language || file?.lang || row.language || row.lang;
+      const lang = rawLanguage ? matchLanguage(rawLanguage, selected) : (selected.length === 1 ? selected[0] : null);
+      if (!file || !lang || !supportedFile.test(file.name || `.${file.format}`)) continue;
       const path = downloadPath(file.url);
       const names = releaseNames(file);
       const scope = scopeFor({ ...file, season: file.season ?? row.season }, video, names);
@@ -68,7 +69,7 @@ export function processSubdlResults(rows, video) {
         return !episode || episodeMatches(episode, video);
       });
       direct.push({
-        path,
+        path, lang,
         releases: [...new Set([...names, ...parentReleases])],
         single: scope.single,
         hearingImpaired: file.hi ?? row.hi
@@ -80,14 +81,15 @@ export function processSubdlResults(rows, video) {
       continue;
     }
 
-    const language = row.language || row.lang;
-    if (language && !greek.test(language)) continue;
+    const rawLanguage = row.language || row.lang;
+    const lang = rawLanguage ? matchLanguage(rawLanguage, selected) : (selected.length === 1 ? selected[0] : null);
+    if (!lang) continue;
     const path = downloadPath(row.url);
     const names = releaseNames(row);
     const scope = scopeFor(row, video, names);
     if (path && scope.allowed) {
       candidates.push({
-        path,
+        path, lang,
         releases: names.filter((name) => {
           const episode = parseEpisode(name);
           return video.type === 'movie' || !episode || episodeMatches(episode, video);
@@ -102,14 +104,14 @@ export function processSubdlResults(rows, video) {
   );
 }
 
-export function createSubdlSearch(apiKey, fetcher = fetch) {
+export function createSubdlSearch(apiKey, selected, fetcher = fetch) {
   const search = cached(async (video, filename) => {
     const url = new URL(searchUrl);
     url.search = new URLSearchParams({
       api_key: apiKey,
       [video.idField]: video.titleId,
       type: video.type === 'series' ? 'tv' : 'movie',
-      languages: 'EL',
+      languages: selected.map((code) => languages[code].subdl).join(','),
       releases: '1',
       unpack: '1',
       subs_per_page: '30',
@@ -129,13 +131,13 @@ export function createSubdlSearch(apiKey, fetcher = fetch) {
     }
     const returnedId = data.results?.[0]?.[video.idField];
     if (returnedId && String(returnedId) !== video.titleId) return [];
-    return processSubdlResults(data.subtitles, video);
+    return processSubdlResults(data.subtitles, video, selected);
   });
   return (video, filename = '') => search(JSON.stringify([video, filename]), video, filename);
 }
 
 async function unpackSubtitle(bytes, selection) {
-  const directory = await mkdtemp(join(tmpdir(), 'stremio-greek-'));
+  const directory = await mkdtemp(join(tmpdir(), 'stremio-subs-'));
   try {
     const path = join(directory, 'subtitle.zip');
     await writeFile(path, bytes);
@@ -164,7 +166,7 @@ async function unpackSubtitle(bytes, selection) {
   }
 }
 
-export function toWebVtt(bytes) {
+export function toWebVtt(bytes, lang = 'el') {
   let text;
   if (bytes[0] === 0xff && bytes[1] === 0xfe) text = new TextDecoder('utf-16le').decode(bytes);
   else if (bytes[0] === 0xfe && bytes[1] === 0xff) text = new TextDecoder('utf-16be').decode(bytes);
@@ -172,7 +174,7 @@ export function toWebVtt(bytes) {
     try {
       text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     } catch {
-      text = new TextDecoder('windows-1253').decode(bytes);
+      text = new TextDecoder(languages[lang]?.encoding ?? 'windows-1253').decode(bytes);
     }
   }
   text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
@@ -189,9 +191,9 @@ export function toWebVtt(bytes) {
 
 export async function downloadedSubtitle(bytes, selection) {
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
-  if (isZip) return toWebVtt(await unpackSubtitle(bytes, selection));
+  if (isZip) return toWebVtt(await unpackSubtitle(bytes, selection), selection.lang);
   if (bytes.length > maxSubtitle) throw new Error('Subtitle exceeded size limit');
-  return toWebVtt(bytes);
+  return toWebVtt(bytes, selection.lang);
 }
 
 export function createSubdlDownload(fetcher = fetch) {

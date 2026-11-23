@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { installPath, setInstallationPassword, validInstallation, validPassword } from './installation.js';
+import { languageCodes, resolveLanguages } from './languages.js';
 import { publicSourceUrl } from './public-sources.js';
 
 export const fields = {
@@ -64,9 +65,17 @@ export function readConfig(env) {
     }
   }
 
+  settings.LANGUAGES = env.LANGUAGES ?? languageCodes.join(',');
+  let languages;
+  try {
+    languages = resolveLanguages(settings.LANGUAGES);
+  } catch (error) {
+    throw new InvalidSettings(error.message);
+  }
+  settings.LANGUAGES = languages.join(',');
   settings.STREAM_LIST = env.STREAM_LIST || 'shortlist';
   if (!['shortlist', 'all'].includes(settings.STREAM_LIST)) {
-    throw new InvalidSettings('Choose either the Greek shortlist or all streams.');
+    throw new InvalidSettings('Choose either the matched shortlist or all streams.');
   }
 
   // Keep the existing key so saved preferences also apply to likely matches.
@@ -95,7 +104,7 @@ export function readConfig(env) {
   const openSubtitlesKey = settings.OPENSUBTITLES_API_KEY;
   const subsourceKey = settings.SUBSOURCE_API_KEY;
   return {
-    settings, manifestUrls, apiKey, openSubtitlesKey, subsourceKey, publicUrl, host, port,
+    settings, manifestUrls, apiKey, openSubtitlesKey, subsourceKey, publicUrl, host, port, languages,
     shortlist: settings.STREAM_LIST === 'shortlist', matchLabelPosition: settings.EXACT_MATCH_POSITION
   };
 }
@@ -111,7 +120,7 @@ export async function openSettings(env, file, { shared = false, requireExisting 
   }
 
   const merged = { ...env };
-  for (const key of [...Object.keys(fields), 'STREAM_LIST', 'EXACT_MATCH_POSITION']) if (Object.hasOwn(saved, key)) merged[key] = saved[key];
+  for (const key of [...Object.keys(fields), 'STREAM_LIST', 'EXACT_MATCH_POSITION', 'LANGUAGES']) if (Object.hasOwn(saved, key)) merged[key] = saved[key];
   if (saved.installation != null && !validInstallation(saved.installation)) throw new Error('Invalid installation settings.');
   let current = { ...readConfig(merged), installation: saved.installation };
   let pending = Promise.resolve();

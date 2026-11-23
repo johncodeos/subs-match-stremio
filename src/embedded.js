@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { cached } from './http.js';
+import { languageCodes, languages } from './languages.js';
 import { writePrivateJson } from './settings.js';
 
 const headLimit = 64 * 1024;
@@ -7,20 +8,22 @@ const tailLimit = 512 * 1024;
 const probeTimeout = 2000;
 const definitiveTtl = 7 * 24 * 60 * 60 * 1000;
 
-const greekCode = /^(?:gre|ell|el|gr|grek|greek)$/;
-const greekName = /greek|ελληνικ/i;
 const subtitleHandlers = new Set(['text', 'sbtl', 'subp', 'wvtt', 'stpp', 'c608', 'c708']);
 const subtitleCodecs = new Set(['tx3g', 'text', 'wvtt', 'stpp', 'stxt', 'c608', 'c708']);
 
 const extension = /\.(?:mp4|mkv|avi|m4v|mov|webm)$/i;
-const trailingGreek = /(?:^|[\s._\-[(])(?:greek|gre|ell|gr|el)[\s._\-)\]]*$/i;
-const explicitGreekSubs = /\bgreek[\s._(-]*subs?\b|\bgreek[\s._(-]*subtitles?\b|\bsubs?[\s._)-]*greek\b|\bgr[\s._(-]*subs?\b|ελληνικ\w*[\s.,_-]*υπ[όο]τ[ίι]τλ|υπ[όο]τ[ίι]τλ\w*[\s.,_-]*ελληνικ\w*/i;
-const subsContext = /sub|υπ[όο]τ[ίι]τλ/i;
-const dubContext = /\b(?:dub\w*|μεταγλ[ώω]ττιση|(?:dual|multi)[ ._-]?audio)\b/i;
+const subsContext = new RegExp(
+  ['sub', ...Object.values(languages).map((profile) => profile.subsWords).filter(Boolean)].join('|'), 'i');
+const dubContext = new RegExp(
+  `\\b(?:dub\\w*|(?:dual|multi)[ ._-]?audio|${Object.values(languages).map((profile) => profile.dubWords).filter(Boolean).join('|')})\\b`, 'i');
 
-function greekTrack(track) {
+function trackLanguages(track) {
   const codes = `${track.lang ?? ''} ${track.ietf ?? ''}`.toLowerCase().split(/[-_\s]+/).filter(Boolean);
-  return codes.some((code) => greekCode.test(code)) || greekName.test(track.name ?? '');
+  const name = track.name ?? '';
+  return languageCodes.filter((code) => {
+    const profile = languages[code];
+    return codes.some((token) => profile.trackCodes.test(token)) || profile.trackName.test(name);
+  });
 }
 
 function readVint(buf, pos, keepMarker) {
@@ -227,22 +230,25 @@ export function readContainer(buf) {
   return { tracks: [], known: false, needsTail: false, moovStart: null, isSubtitle: () => false };
 }
 
-export function embeddedGreekTracks(buf) {
+export function embeddedSubtitleTracks(buf) {
   const { tracks, known, isSubtitle } = readContainer(buf);
   if (!known) return null;
-  return tracks.filter(isSubtitle).some(greekTrack);
+  return [...new Set(tracks.filter(isSubtitle).flatMap(trackLanguages))];
 }
 
-export function filenameGreekHint(stream) {
+export function filenameLanguageHints(stream) {
   const values = [stream?.behaviorHints?.filename, stream?.filename, stream?.name, stream?.title, stream?.description]
     .filter((value) => typeof value === 'string');
   const firstLines = values.map((value) => value.split(/\r?\n/)[0].replace(extension, ''));
   const text = values.join('\n');
-  const explicit = explicitGreekSubs.test(text) || firstLines.some((line) => trailingGreek.test(line));
-  const flagged = text.includes('🇬🇷') && (subsContext.test(text) || !dubContext.test(text));
-  if (!explicit && !flagged) return false;
-  if (dubContext.test(text) && !subsContext.test(text)) return false;
-  return true;
+  return languageCodes.filter((code) => {
+    const profile = languages[code];
+    const explicit = profile.explicit.test(text) || firstLines.some((line) => profile.trailing.test(line));
+    const flagged = profile.flags.some((flag) => text.includes(flag)) && subsContext.test(text);
+    if (!explicit && !flagged) return false;
+    if (dubContext.test(text) && !subsContext.test(text)) return false;
+    return true;
+  });
 }
 
 async function fetchRange(url, fetcher, range, limit, headers, requirePartial) {
@@ -301,7 +307,7 @@ export function openProbeCache(file) {
 }
 
 export function createEmbeddedProbe({ fetcher = fetch, head = headLimit, tail = tailLimit, cache } = {}) {
-  // Resolves true/false when the container is readable and undefined otherwise.
+  // Resolves the embedded subtitle languages when the container is readable and undefined otherwise.
   // Network failures reject so they are retried instead of cached as "unknown".
   const load = async (stream) => {
     const url = typeof stream?.url === 'string' ? stream.url : '';
@@ -321,8 +327,8 @@ export function createEmbeddedProbe({ fetcher = fetch, head = headLimit, tail = 
       const parsed = last && findMoov(last);
       if (parsed) ({ tracks, known, isSubtitle } = { tracks: parsed, known: true, isSubtitle: (track) => track.subtitle });
     }
-    const result = known ? tracks.filter(isSubtitle).some(greekTrack) : undefined;
-    if (cache && typeof result === 'boolean') cache.set(url, result);
+    const result = known ? [...new Set(tracks.filter(isSubtitle).flatMap(trackLanguages))] : undefined;
+    if (cache && Array.isArray(result)) cache.set(url, result);
     return result;
   };
   const cachedLoad = cached(load, { ttl: 10 * 60_000, capacity: 200 });
@@ -330,7 +336,7 @@ export function createEmbeddedProbe({ fetcher = fetch, head = headLimit, tail = 
     const url = typeof stream?.url === 'string' ? stream.url : '';
     if (!url) return Promise.resolve(undefined);
     const saved = cache?.get(url);
-    if (saved !== undefined) return Promise.resolve(saved);
+    if (Array.isArray(saved)) return Promise.resolve(saved);
     return cachedLoad(url, stream).catch(() => undefined);
   };
 }

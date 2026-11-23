@@ -19,7 +19,7 @@ const source = {
 const unmatched = { ...source, url: 'https://streams.example/alternate.mp4', behaviorHints: { filename: 'Show.S02E03.1080p.Bluray-SPARKS.mp4' } };
 
 async function listen(t, config, dependencies) {
-  const server = createAddon({ shortlist: false, ...config, publicUrl: 'http://127.0.0.1' }, dependencies);
+  const server = createAddon({ shortlist: false, languages: ['el'], ...config, publicUrl: 'http://127.0.0.1' }, dependencies);
   server.listen(0, '127.0.0.1');
   t.after(() => new Promise((resolve) => server.close(resolve)));
   await once(server, 'listening');
@@ -300,7 +300,7 @@ test('the Greek shortlist shows a title-check link when releases do not match', 
   const get = await listen(t, { manifestUrls: [apiManifest], openSubtitlesKey: 'test-key', shortlist: true }, { fetcher });
   const { streams } = await (await get(video)).json();
   assert.deepEqual(streams, [{
-    name: 'Greek Sub Match',
+    name: 'Subs Match',
     description: 'No Greek subtitle match\nCheck this title for details.',
     externalUrl: 'http://127.0.0.1/configure/check?id=tt1234567%3A2%3A3'
   }]);
@@ -332,12 +332,29 @@ test('container probing adds the Embedded label next to a subtitle match', async
       season: 2, episode: 3, release_name: '1080p - 720p YTS.AG', language: 'EL', url: '/subtitle/123-456.zip'
     }] });
   };
-  const probe = async (stream) => stream.url === probed.url ? true : undefined;
+  const probe = async (stream) => stream.url === probed.url ? ['el'] : undefined;
   const get = await listen(t, { manifestUrls: [apiManifest], apiKey: 'test-key', shortlist: true }, { fetcher, probe });
   const { streams } = await (await get(video)).json();
   assert.equal(streams.length, 1);
   assert.match(streams[0].description, /(?:^|\n)🇬🇷 Embedded · Likely · YTS$/);
   assert.equal(streams[0].subtitles.length, 2);
+});
+
+test('a filename hint does not hide additional embedded subtitle languages', async (t) => {
+  const hinted = {
+    ...source,
+    behaviorHints: { filename: 'Show.S02E03.1080p.WEB-DL.GRE.mkv' }
+  };
+  const fetcher = async (url) => url.host === 'streams.example'
+    ? Response.json({ streams: [hinted] })
+    : Response.json({ data: [] });
+  const get = await listen(t, {
+    manifestUrls: [apiManifest], openSubtitlesKey: 'test-key', languages: ['el', 'fr'], shortlist: true
+  }, { fetcher, probe: async () => ['el', 'fr', 'de'] });
+
+  const { streams } = await (await get(video)).json();
+  assert.equal(streams.length, 1);
+  assert.match(streams[0].description, /(?:^|\n)🇬🇷🇫🇷 Embedded$/);
 });
 
 test('SubSource finds Greek movie releases and serves the selected episode from its own archive', async (t) => {
@@ -397,4 +414,33 @@ test('SubSource finds Greek movie releases and serves the selected episode from 
   assert.equal(response.status, 200);
   assert.match(response.headers.get('Content-Type'), /^text\/vtt/);
   assert.match(await response.text(), /^WEBVTT\s+1\n00:00:01\.000 --> 00:00:03\.500\nΕπεισόδιο 3\s*$/);
+});
+
+test('matches several selected languages and labels each one', async (t) => {
+  const seen = [];
+  const fetcher = async (url) => {
+    seen.push(url);
+    if (url.host === 'streams.example') return Response.json({ streams: [unmatched, source] });
+    assert.equal(url.searchParams.get('languages'), 'EL,FR');
+    return Response.json({
+      status: true, results: [{ imdb_id: 'tt1234567' }], subtitles: [{
+        release_name: '1080p - 720p YTS.AG',
+        unpack_files: [
+          { season: 2, episode: 3, name: 'Show.S02E03.1080p.YTS.AG.srt', language: 'EL', url: '/subtitle/123/greek' },
+          { season: 2, episode: 3, name: 'Show.S02E03.1080p.YTS.AG.srt', language: 'FR', url: '/subtitle/123/french' }
+        ]
+      }]
+    });
+  };
+  const get = await listen(t, { manifestUrls: [apiManifest], apiKey: 'example-key', languages: ['el', 'fr'] }, { fetcher });
+  const { streams } = await (await get(video)).json();
+  assert.match(streams[0].description, /(?:^|\n)🇬🇷 Exact match|🇫🇷 Exact match/);
+  const langs = streams[0].subtitles.slice(1).map(({ lang }) => lang).sort();
+  assert.deepEqual(langs, ['fre', 'gre']);
+});
+
+test('rejects unsupported language codes in settings', () => {
+  assert.throws(() => readConfig({ LANGUAGES: 'xx' }), /Unsupported subtitle language code: xx/);
+  assert.throws(() => readConfig({ LANGUAGES: '' }), /Choose at least one subtitle language/);
+  assert.deepEqual(readConfig({ LANGUAGES: 'fr,el' }).languages, ['el', 'fr']);
 });

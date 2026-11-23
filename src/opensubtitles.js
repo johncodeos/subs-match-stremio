@@ -1,11 +1,12 @@
 import { cached, fetchBytes, fetchJson } from './http.js';
+import { languages, matchLanguage } from './languages.js';
 import { episodeMatches, parseEpisode } from './match.js';
 import { toWebVtt } from './subdl.js';
 
 const apiRoot = new URL('https://api.opensubtitles.com/api/v1/');
 import pkg from '../package.json' with { type: 'json' };
 
-const userAgent = `GreekSubMatch v${pkg.version}`;
+const userAgent = `SubsMatch v${pkg.version}`;
 
 function trustedUrl(url) {
   return url.protocol === 'https:' && !url.port && !url.username && !url.password &&
@@ -26,10 +27,11 @@ async function fetchOfficial(url, options, fetcher, allow) {
   throw new Error('OpenSubtitles redirect could not be resolved');
 }
 
-function candidates(data, video, idKey, id, hash) {
+function candidates(data, video, idKey, id, hash, selected) {
   return data.flatMap((item) => {
     const attributes = item?.attributes;
-    if (attributes?.language !== 'el' || attributes.foreign_parts_only || attributes.files?.length !== 1) return [];
+    const lang = matchLanguage(attributes?.language, selected);
+    if (!lang || attributes.foreign_parts_only || attributes.files?.length !== 1) return [];
     const feature = attributes.feature_details;
     if (feature?.[idKey] && Number(feature[idKey]) !== id) return [];
     if (video.type === 'series' &&
@@ -49,11 +51,11 @@ function candidates(data, video, idKey, id, hash) {
       return episode && !episodeMatches(episode, video);
     })) return [];
 
-    return [{ fileId, releases: releases.length ? releases : ['OpenSubtitles file match'], videoHash, hearingImpaired: attributes.hearing_impaired }];
+    return [{ fileId, lang, releases: releases.length ? releases : ['OpenSubtitles file match'], videoHash, hearingImpaired: attributes.hearing_impaired }];
   }).sort((a, b) => Number(Boolean(a.hearingImpaired)) - Number(Boolean(b.hearingImpaired)));
 }
 
-export function createOpenSubtitles(apiKey, fetcher = fetch) {
+export function createOpenSubtitles(apiKey, selected, fetcher = fetch) {
   const headers = { 'Api-Key': apiKey, 'User-Agent': userAgent, Accept: 'application/json' };
   const authFetch = (request = {}) => (url, options) =>
     fetchOfficial(url, { ...options, ...request, headers: { ...headers, ...request.headers } }, fetcher,
@@ -66,7 +68,9 @@ export function createOpenSubtitles(apiKey, fetcher = fetch) {
     const idKey = series ? 'parent_' + video.idField : video.idField;
     const id = Number(video.titleId.replace(/^tt/, ''));
     url.search = new URLSearchParams({
-      [idKey]: String(id), languages: 'el', type: series ? 'episode' : 'movie', foreign_parts_only: 'exclude'
+      [idKey]: String(id),
+      languages: selected.flatMap((code) => languages[code].osCodes).join(','),
+      type: series ? 'episode' : 'movie', foreign_parts_only: 'exclude'
     });
     if (series) {
       url.searchParams.set('season_number', String(video.season));
@@ -81,12 +85,12 @@ export function createOpenSubtitles(apiKey, fetcher = fetch) {
     url.searchParams.sort();
     const result = await fetchJson(url, authFetch(), { timeout: page || filename || hash ? 2200 : 6500 });
     if (!Array.isArray(result.data)) throw new Error('OpenSubtitles search failed');
-    return { entries: candidates(result.data, video, idKey, id, hash), pages: Number(result.total_pages) };
+    return { entries: candidates(result.data, video, idKey, id, hash, selected), pages: Number(result.total_pages) };
   });
 
   const lookup = (video, filters = {}) => search(JSON.stringify([video, filters]), video, filters);
 
-  const download = cached(async (fileId) => {
+  const download = cached(async (fileId, lang) => {
     if (!Number.isSafeInteger(fileId) || fileId < 1) throw new Error('Invalid OpenSubtitles file');
     const result = await fetchJson(new URL('download', apiRoot), authFetch({
       method: 'POST',
@@ -98,7 +102,7 @@ export function createOpenSubtitles(apiKey, fetcher = fetch) {
       limit: 1024 * 1024,
       fetcher: (url, options) => fetchOfficial(url, options, fetcher, trustedUrl)
     });
-    return toWebVtt(bytes);
+    return toWebVtt(bytes, lang);
   }, { capacity: 48 });
 
   return {
@@ -109,6 +113,6 @@ export function createOpenSubtitles(apiKey, fetcher = fetch) {
       return filename ? (await lookup(video, { filename })).entries : [];
     },
     searchHash: async (video, hash) => (await lookup(video, { hash })).entries.filter((result) => result.videoHash === hash),
-    download: (_key, { fileId }) => download(fileId, fileId)
+    download: (_key, { fileId, lang }) => download(fileId, fileId, lang)
   };
 }

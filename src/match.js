@@ -1,3 +1,5 @@
+import { allMarkers, flagsFor, languages } from './languages.js';
+
 const resolutionPattern = /\b(?:4320|2160|1440|1080|720|576|480)p\b|\b4k\b/gi;
 const sourcePattern = /\b(?:web[ ._-]*(?:dl|rip)|bluray|blu[ ._-]ray|bdremux|b[dr]rip|hdtv|dvd[ ._-]*rip|dvdscr|(?:hd)?cam(?:[ ._-]*rip)?|telesync|hd[ ._-]*ts|telecine|hd[ ._-]*tc)\b/i;
 const cutPattern = /\b(?:extended(?:[ ._-]+cut)?|theatrical(?:[ ._-]+cut)?|director'?s?[ ._-]+cut|unrated|final[ ._-]+cut)\b/i;
@@ -6,7 +8,13 @@ const ytsPattern = /(?:^|[\s.\[\]_-])(?:yify|yts(?:[.-](?:ag|mx|am|lt|gg|bz))?)(
 const releaseGroupList = /\b[a-z][a-z0-9]{1,19}(?:\s*&\s*[a-z][a-z0-9]{1,19})+\b/gi;
 const candidateDescriptions = new WeakMap();
 
-const nonGroup = /^(?:dl|rip|ray|web(?:dl|rip)?|bluray|bdremux|b[dr]rip|hdtv|h26[45]|x26[45]|hevc|avc|av1|aac|atmos|dts|remux|hdr|dv|imax|greek|english|multi|cam(?:rip)?|telesync)$/i;
+const languageWords = Object.values(languages).map((profile) => profile.name.toLowerCase()).join('|');
+const nonGroup = new RegExp(
+  `^(?:dl|rip|ray|web(?:dl|rip)?|bluray|bdremux|b[dr]rip|hdtv|h26[45]|x26[45]|hevc|avc|av1|aac|atmos|dts|remux|hdr|dv|imax|${languageWords}|multi|cam(?:rip)?|telesync)$`, 'i');
+
+const markerSuffix = allMarkers.slice().sort((a, b) => b.length - a.length)
+  .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const trailingLanguage = new RegExp(`[\\s._-]+(?:[\\[(]?(?:${markerSuffix})[\\])]?)$`, 'i');
 
 export function parseVideoId(type, id) {
   const match = type === 'movie'
@@ -43,7 +51,7 @@ export function episodeMatches(episode, video) {
 function releaseStem(value) {
   const filename = value.trim();
   return filename.replace(/\.(?:mp4|mkv|avi|m4v|mov|srt|vtt|ass|ssa|zip)$/i, '')
-    .replace(/[\s._-]+(?:[\[(]?(?:greek|gre|ell|el|gr)[\])]?)$/i, '');
+    .replace(trailingLanguage, '');
 }
 
 export function releaseKey(value) {
@@ -143,14 +151,14 @@ export function bestMatch(stream, subtitles, video) {
   const hash = videoHash(stream);
   for (const subtitle of subtitles) {
     if (subtitle.videoHash) {
-      if (hash === subtitle.videoHash) return { subtitle, score: 3, release: subtitle.releases[0] };
+      if (hash === subtitle.videoHash) return { subtitle, score: 3, release: subtitle.releases[0], lang: subtitle.lang };
       continue;
     }
     for (const { release, description } of describeCandidate(subtitle)) {
       if (context && !compatible(context, description)) continue;
       for (const variant of releases) {
         const evidence = releaseEvidence(variant, description);
-        if (evidence && evidence.score > (best?.score ?? 0)) best = { subtitle, release, ...evidence };
+        if (evidence && evidence.score > (best?.score ?? 0)) best = { subtitle, release, lang: subtitle.lang, ...evidence };
       }
     }
   }
@@ -174,12 +182,18 @@ export function matchReason(match) {
   return ['Likely', [match.group.toUpperCase(), sourceLabels[match.source]].filter(Boolean).join(' ')].join(' · ');
 }
 
-export function streamMatchDescription(details, match, position, embedded = false) {
+export function streamMatchDescription(details, match, position, embeddedLangs = []) {
   const parts = [];
-  if (embedded) parts.push('Embedded');
-  if (match) parts.push(match.score === 2 ? 'Exact match' : embedded ? matchReason(match) : `Greek subtitles · ${matchReason(match)}`);
+  const langs = [...embeddedLangs, match?.lang].filter(Boolean);
+  if (embeddedLangs.length) parts.push('Embedded');
+  if (match) {
+    const langName = languages[match.lang]?.name;
+    parts.push(match.score === 2 ? 'Exact match'
+      : embeddedLangs.length ? matchReason(match)
+      : `${langName ? langName + ' ' : ''}subtitles · ${matchReason(match)}`);
+  }
   if (!parts.length) return details;
-  const label = `🇬🇷 ${parts.join(' · ')}`;
+  const label = [flagsFor(langs), parts.join(' · ')].filter(Boolean).join(' ');
   if (match && match.score > 2) return [label, details].filter(Boolean).join('\n');
 
   const text = String(details ?? '').trimEnd();

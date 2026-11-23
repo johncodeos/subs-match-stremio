@@ -2,15 +2,19 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parseOffset } from './confirmations.js';
 import { installPath, validPassword, verifyInstallationPassword } from './installation.js';
+import { languageCodes, languages, flagsFor, namesFor } from './languages.js';
 import { diagnosticsName, emptyResult, shortlistLimit, subtitleSelection } from './lookup.js';
 import { matchReason, parseVideoId, streamMatchDescription } from './match.js';
 import { InvalidSettings, fields, isLive, matchLabelPositions, setupRequirements } from './settings.js';
 
 const maxFormSize = 32 * 1024;
 const fieldsScript = readFileSync(new URL('./configure-fields.js', import.meta.url));
-const exactMatchExamples = Object.fromEntries(Object.keys(matchLabelPositions).map((position) => [
-  position, streamMatchDescription('Example Movie (2026) · 2160p WEB-DL\n4.56 GB', { score: 2 }, position)
-]));
+
+function matchExamples(lang) {
+  return Object.fromEntries(Object.keys(matchLabelPositions).map((position) => [
+    position, streamMatchDescription('Example Movie (2026) · 2160p WEB-DL\n4.56 GB', { score: 2, lang }, position)
+  ]));
+}
 const headers = {
   'Cache-Control': 'no-store',
   'Content-Type': 'text/html; charset=utf-8',
@@ -69,7 +73,7 @@ function layout(title, content, basePath = '') {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · Greek Sub Match</title>
+<title>${title} · Subs Match</title>
 <link rel="icon" type="image/png" href="${basePath}/addon-icon.png">
 <style>
 :root{
@@ -148,6 +152,11 @@ button:hover{background:var(--brand-hover)}
 .summary dd{margin:0;font-size:24px;font-weight:700}
 .release{overflow-wrap:anywhere}
 .label-position{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.language-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 12px;margin-top:4px}
+.language-option{display:flex;align-items:center;gap:8px;font-weight:400;padding:9px 10px;border:1px solid var(--field-line);border-radius:8px;background:var(--field);cursor:pointer}
+.language-option:has(input:checked){border-color:var(--accent);background:var(--tint)}
+.language-option input{width:auto;height:auto;margin:0;accent-color:var(--brand)}
+.language-flag{font-size:17px;line-height:1}
 .stream-preview{min-width:0;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--field)}
 .stream-preview figcaption{color:var(--muted);font-size:13px;margin-bottom:4px}
 .stream-preview pre{margin:0;font:inherit;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -196,8 +205,8 @@ function brand(basePath) {
   return `<div class="brand">
     <img src="${basePath}/addon-icon.png" alt="" width="64" height="64">
     <div>
-      <h1>Greek Sub Match</h1>
-      <p class="sub">Find Greek subtitles that match what you play in Stremio.</p>
+      <h1>Subs Match</h1>
+      <p class="sub">Find subtitles that match what you play in Stremio.</p>
     </div>
   </div>`;
 }
@@ -208,10 +217,22 @@ function installPage(config, basePath) {
 ${installSection(config, { ready: true, basePath })}`, basePath);
 }
 
+function languageField(selected) {
+  return `<div class="language-grid" role="group" aria-labelledby="languages-label">
+    ${languageCodes.map((code) => {
+      const profile = languages[code];
+      return `<label class="language-option"><input type="checkbox" name="LANGUAGES" value="${code}"${selected.includes(code) ? ' checked' : ''}>
+        <span class="language-flag" aria-hidden="true">${profile.flag}</span><span>${profile.name}</span></label>`;
+    }).join('\n      ')}
+    <input type="hidden" name="LANGUAGES" value="">
+  </div>`;
+}
+
 function page(config, csrf, { error = '', saved = false, basePath = '', signup = false } = {}) {
   const { settings } = config;
   const live = isLive(config);
-  const ready = live ? 'Ready to match Greek subtitles for movies and episodes.'
+  const examples = matchExamples(config.languages?.[0] ?? 'el');
+  const ready = live ? 'Ready to match subtitles for movies and episodes.'
     : 'Add a stream add-on link and at least one subtitle API key to start matching your library.';
   return layout('Configure', `<header>
   ${brand(basePath)}
@@ -241,9 +262,15 @@ ${error ? `<p class="notice error" role="alert">${escapeHtml(error)}</p>`
         ${streamField('STREAM_ADDON_MANIFEST_2', settings.STREAM_ADDON_MANIFEST_2)}
       </details>
     </div>
+    <div class="setup-group" role="group" aria-labelledby="languages" data-required-message="Choose at least one subtitle language.">
+      <h2 id="languages">Subtitle languages <span class="required-mark" aria-hidden="true">*</span></h2>
+      <p class="help">Matches and embedded detection run for the languages you pick.</p>
+      ${languageField(config.languages ?? [])}
+      <p class="field-error" role="alert" data-required-error></p>
+    </div>
     <div class="setup-group" role="group" aria-labelledby="providers" data-required-message="${setupRequirements.providers}">
       <h2 id="providers">Subtitle providers <span class="required-mark" aria-hidden="true">*</span></h2>
-      <p class="help">Add at least one provider to search for Greek subtitles.</p>
+      <p class="help">Add at least one provider to search for subtitles.</p>
       ${subtitleProviders.map(([name, , help]) => apiKeyField(name, settings, help)).join('')}
       <details class="disclosure provider-picker" id="provider-picker" hidden>
         <summary id="provider-picker-summary">Add another provider</summary>
@@ -270,8 +297,8 @@ ${error ? `<p class="notice error" role="alert">${escapeHtml(error)}</p>`
       <div class="field">
         <label for="STREAM_LIST">Results to show in Stremio</label>
         <select id="STREAM_LIST" name="STREAM_LIST">
-          <option value="shortlist" ${config.shortlist ? 'selected' : ''}>Greek shortlist</option>
-          <option value="all" ${config.shortlist ? '' : 'selected'}>All streams, Greek matches first</option>
+          <option value="shortlist" ${config.shortlist ? 'selected' : ''}>Matched shortlist</option>
+          <option value="all" ${config.shortlist ? '' : 'selected'}>All streams, matches first</option>
         </select>
         <p class="help">The shortlist shows up to ${shortlistLimit} matches. If no release matches, Stremio shows a message with a link to check the title.</p>
       </div>
@@ -285,7 +312,7 @@ ${error ? `<p class="notice error" role="alert">${escapeHtml(error)}</p>`
         </div>
         <figure class="stream-preview">
           <figcaption>Stream preview</figcaption>
-          <pre id="match-label-preview" aria-live="polite" aria-atomic="true" data-examples="${escapeHtml(JSON.stringify(exactMatchExamples))}">${escapeHtml(exactMatchExamples[config.matchLabelPosition])}</pre>
+          <pre id="match-label-preview" aria-live="polite" aria-atomic="true" data-examples="${escapeHtml(JSON.stringify(examples))}">${escapeHtml(examples[config.matchLabelPosition])}</pre>
         </figure>
       </div>
     </details>
@@ -332,7 +359,7 @@ function diagnostics(report, id, csrf, tools, basePath) {
   const count = report.matchedRows.length;
   const providers = report.sets.map(({ provider, candidates, available, extraFailed }) => {
     const files = new Set(candidates.map((candidate) => candidate.fileId ?? candidate.path)).size;
-    const result = available ? `${files} Greek subtitle files${extraFailed ? ' · extra search failed' : ''}` : 'unavailable';
+    const result = available ? `${files} subtitle files${extraFailed ? ' · extra search failed' : ''}` : 'unavailable';
     return `<li>${escapeHtml(provider.name)} · ${result}</li>`;
   }).join('');
   const status = count ? '' : emptyResult(report).detail;
@@ -340,19 +367,19 @@ function diagnostics(report, id, csrf, tools, basePath) {
     <h2>Results for ${escapeHtml(id)}</h2>
     <dl class="summary">
       <div><dt>Distinct streams</dt><dd>${report.rows.length}</dd></div>
-      <div><dt>Greek matches</dt><dd>${count}</dd></div>
+      <div><dt>Matches</dt><dd>${count}</dd></div>
       <div><dt>Playable streams shown</dt><dd>${report.selected.length}</dd></div>
     </dl>
     <ul>${providers}</ul>
     ${report.searchedMore ? '<p class="help">An additional subtitle search was run for this title.</p>' : ''}
-    ${status ? `<p role="status">${status}</p>` : '<p class="help">After checking playback, use the File ID on the Greek subtitle label to find the same stream here. Positive delay shows subtitles later and negative delay shows them earlier.</p>'}
+    ${status ? `<p role="status">${status}</p>` : '<p class="help">After checking playback, use the File ID on the subtitle label to find the same stream here. Positive delay shows subtitles later and negative delay shows them earlier.</p>'}
   </section>
   ${report.matchedRows.slice(0, shortlistLimit).map((row) => `<section>
     <h2 class="release">${escapeHtml(diagnosticsName(row.stream))}</h2>
     ${row.fileKey ? `<p class="help">File ID ${row.fileKey.slice(0, 8).toUpperCase()}</p>` : ''}
-    ${row.embedded && !row.matches.length ? '<p><strong>🇬🇷 Embedded Greek subtitles</strong></p>' : ''}
+    ${row.embeddedLangs.length && !row.matches.length ? `<p><strong>${flagsFor(row.embeddedLangs)} Embedded ${escapeHtml(namesFor(row.embeddedLangs))} subtitles</strong></p>` : ''}
     ${row.matches.map((match) => `<div class="match-detail">
-      <strong>${escapeHtml(matchReason(match))}</strong> · ${escapeHtml(match.provider.name)}${row.embedded ? ' · 🇬🇷 Embedded' : ''}
+      <strong>${escapeHtml(matchReason(match))}</strong> · ${escapeHtml(match.provider.name)}${row.embeddedLangs.length ? ` · ${flagsFor(row.embeddedLangs)} Embedded` : ''}
       <p class="help release">${escapeHtml(match.release)}</p>
       ${timingForm(row, match, report, id, csrf, tools, basePath)}
     </div>`).join('')}
@@ -406,6 +433,7 @@ function formSettings(form) {
     if (value) patch[name] = value;
     else if (form.get('clear_' + name) === '1') patch[name] = '';
   }
+  if (form.has('LANGUAGES')) patch.LANGUAGES = form.getAll('LANGUAGES').filter(Boolean).join(',');
   if (form.has('STREAM_LIST')) patch.STREAM_LIST = form.get('STREAM_LIST');
   if (form.has('EXACT_MATCH_POSITION')) patch.EXACT_MATCH_POSITION = form.get('EXACT_MATCH_POSITION');
   return patch;
@@ -434,7 +462,7 @@ function unlockPage(basePath, csrf, { error = '', id = '' } = {}) {
   return layout('Unlock Configure', `<header>
   <div class="brand">
     <img src="${basePath}/addon-icon.png" alt="" width="64" height="64">
-    <div><h1>Unlock Configure</h1><p class="sub">Enter the password you set when installing Greek Sub Match.</p></div>
+    <div><h1>Unlock Configure</h1><p class="sub">Enter the password you set when installing Subs Match.</p></div>
   </div>
 </header>
 ${error ? `<p class="notice error" role="alert">${escapeHtml(error)}</p>` : ''}
@@ -450,7 +478,7 @@ ${error ? `<p class="notice error" role="alert">${escapeHtml(error)}</p>` : ''}
 </form>`, basePath);
 }
 
-const cookieName = 'greek_sub_match_session';
+const cookieName = 'subs_match_session';
 const sessionLifetime = 30 * 60_000;
 const loginWindow = 5 * 60_000;
 
@@ -495,7 +523,7 @@ export function createConfigureHandler(store, logger, tools) {
     const checking = url.pathname === '/configure/check';
     const revealing = url.pathname === '/configure/reveal';
     const loggingOut = url.pathname === '/configure/logout';
-    const sessionId = req.headers.cookie?.match(/(?:^|;\s*)greek_sub_match_session=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
+    const sessionId = req.headers.cookie?.match(/(?:^|;\s*)subs_match_session=([A-Za-z0-9_-]{43})(?:;|$)/)?.[1];
     const session = installedUrl ? sessions.get(sessionId) : null;
     const unlocked = session && session.expires > Date.now() && session.hash === installation?.hash;
 

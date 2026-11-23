@@ -1,20 +1,22 @@
 import { cached, fetchBytes, fetchJson } from './http.js';
+import { languages, matchLanguage } from './languages.js';
 import { episodeMatches, parseEpisode } from './match.js';
 import { downloadedSubtitle } from './subdl.js';
 
 const apiRoot = new URL('https://api.subsource.net/api/v1/');
 
-function getCandidates(entries, video, movieId) {
+function getCandidates(entries, video, movieId, selected) {
   return entries.flatMap((entry) => {
     const fileId = Number(entry?.subtitleId);
-    if (!Number.isSafeInteger(fileId) || fileId < 1 || entry.language?.toLowerCase() !== 'greek' ||
+    const lang = matchLanguage(entry?.language, selected);
+    if (!Number.isSafeInteger(fileId) || fileId < 1 || !lang ||
         entry.foreignParts || (entry.movieId != null && Number(entry.movieId) !== movieId) ||
         !Array.isArray(entry.releaseInfo)) return [];
 
     const singleFile = Number(entry.files) === 1;
     const releases = entry.releaseInfo.filter((name) => typeof name === 'string' && name.trim())
       .map((name) => name.trim().slice(0, 500));
-    if (video.type === 'movie') return releases.length ? [{ fileId, releases, hearingImpaired: entry.hearingImpaired }] : [];
+    if (video.type === 'movie') return releases.length ? [{ fileId, lang, releases, hearingImpaired: entry.hearingImpaired }] : [];
 
     const exact = releases.filter((name) => episodeMatches(parseEpisode(name), video));
     const season = releases.filter((name) => {
@@ -23,12 +25,12 @@ function getCandidates(entries, video, movieId) {
       return listed && Number(listed[1]) === video.season;
     });
     if (!exact.length && !season.length) return [];
-    return [{ fileId, releases: [...exact, ...season], single: singleFile && exact.length > 0 && !season.length,
+    return [{ fileId, lang, releases: [...exact, ...season], single: singleFile && exact.length > 0 && !season.length,
       hearingImpaired: entry.hearingImpaired }];
   }).sort((a, b) => Number(Boolean(a.hearingImpaired)) - Number(Boolean(b.hearingImpaired)));
 }
 
-export function createSubsource(apiKey, fetcher = fetch) {
+export function createSubsource(apiKey, selected, fetcher = fetch) {
   const authFetch = (url, options) => fetcher(url, { ...options, redirect: 'error', headers: { 'X-API-Key': apiKey } });
   const get = async (route, parameters) => {
     const url = new URL(route, apiRoot);
@@ -52,12 +54,15 @@ export function createSubsource(apiKey, fetcher = fetch) {
   const search = cached(async (video) => {
     const movieId = await searchTitle(JSON.stringify([video.titleId, video.type, video.season]), video);
     if (!movieId) return [];
-    // The API's foreignParts filter also drops older full subtitles with unset metadata.
-    const parameters = { movieId: String(movieId), language: 'greek', limit: '100' };
-    const first = await get('subtitles', parameters);
-    const entries = first.pagination?.pages > 1
-      ? [...first.data, ...(await get('subtitles', { ...parameters, page: '2' })).data] : first.data;
-    return getCandidates(entries, video, movieId);
+    const batches = await Promise.all(selected.map(async (code) => {
+      // The API's foreignParts filter also drops older full subtitles with unset metadata.
+      const parameters = { movieId: String(movieId), language: languages[code].subsource, limit: '100' };
+      const first = await get('subtitles', parameters);
+      const entries = first.pagination?.pages > 1
+        ? [...first.data, ...(await get('subtitles', { ...parameters, page: '2' })).data] : first.data;
+      return entries;
+    }));
+    return getCandidates(batches.flat(), video, movieId, selected);
   });
 
   return {

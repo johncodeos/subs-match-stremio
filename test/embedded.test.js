@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
 import {
-  createEmbeddedProbe, embeddedGreekTracks, filenameGreekHint, openProbeCache, readContainer
+  createEmbeddedProbe, embeddedSubtitleTracks, filenameLanguageHints, openProbeCache, readContainer
 } from '../src/embedded.js';
+import { languageCodes } from '../src/languages.js';
 import { fetchPublicMedia } from '../src/public-sources.js';
 
 function vint(value) {
@@ -68,34 +69,57 @@ function mp4(...tracks) {
 }
 
 test('reads Greek subtitle tracks out of Matroska metadata', () => {
-  assert.equal(embeddedGreekTracks(mkv(
+  assert.deepEqual(embeddedSubtitleTracks(mkv(
     mkvTrack(0x02, 'jpn'), mkvTrack(0x11, 'gre'), mkvTrack(0x11, 'eng')
-  )), true);
-  assert.equal(embeddedGreekTracks(mkv(mkvTrack(0x11, 'eng'))), false);
-  assert.equal(embeddedGreekTracks(mkv(mkvTrack(0x11, undefined, 'Ελληνικά'))), true);
-  assert.equal(embeddedGreekTracks(mkv(mkvTrack(0x11, 'el'))), true);
-  assert.equal(embeddedGreekTracks(mkv(mkvTrack(0x11, 'und'))), false);
-  assert.equal(embeddedGreekTracks(Buffer.from('{"streams":[]}')), null);
+  )).sort(), ['el', 'en']);
+  assert.deepEqual(embeddedSubtitleTracks(mkv(mkvTrack(0x11, 'eng'))), ['en']);
+  assert.deepEqual(embeddedSubtitleTracks(mkv(mkvTrack(0x11, undefined, 'Ελληνικά'))), ['el']);
+  assert.deepEqual(embeddedSubtitleTracks(mkv(mkvTrack(0x11, 'el'))), ['el']);
+  assert.deepEqual(embeddedSubtitleTracks(mkv(mkvTrack(0x11, 'und'))), []);
+  assert.deepEqual(embeddedSubtitleTracks(mkv(mkvTrack(0x11, 'fra'))), ['fr']);
+  assert.equal(embeddedSubtitleTracks(Buffer.from('{"streams":[]}')), null);
 });
 
 test('reads Greek subtitle tracks out of MP4 metadata', () => {
-  assert.equal(embeddedGreekTracks(mp4(
+  assert.deepEqual(embeddedSubtitleTracks(mp4(
     mp4Trak('jpn', 'vide'), mp4Trak('gre', 'sbtl', 'Greek'), mp4Trak('eng', 'soun')
-  )), true);
-  assert.equal(embeddedGreekTracks(mp4(mp4Trak('eng', 'sbtl'))), false);
-  assert.equal(embeddedGreekTracks(mp4(mp4Trak('eng', 'text', 'Ελληνικά'))), true);
+  )), ['el']);
+  assert.deepEqual(embeddedSubtitleTracks(mp4(mp4Trak('eng', 'sbtl'))), ['en']);
+  // The name says Greek while the code says English — both signals are reported.
+  assert.deepEqual(embeddedSubtitleTracks(mp4(mp4Trak('eng', 'text', 'Ελληνικά'))).sort(), ['el', 'en']);
+});
+
+test('identifies all supported subtitle languages in Matroska and MP4 metadata', () => {
+  const containerCodes = {
+    el: 'ell', en: 'eng', es: 'spa', pt: 'por', fr: 'fra', de: 'deu',
+    it: 'ita', pl: 'pol', ru: 'rus', tr: 'tur', ar: 'ara', ro: 'ron'
+  };
+  assert.deepEqual(Object.keys(containerCodes).sort(), [...languageCodes].sort());
+  for (const [language, code] of Object.entries(containerCodes)) {
+    assert.deepEqual(embeddedSubtitleTracks(mkv(mkvTrack(0x11, code))), [language]);
+    assert.deepEqual(embeddedSubtitleTracks(mp4(mp4Trak(code, 'sbtl'))), [language]);
+    assert.deepEqual(embeddedSubtitleTracks(mkv(mkvTrack(0x02, code))), []);
+    assert.deepEqual(embeddedSubtitleTracks(mp4(mp4Trak(code, 'soun'))), []);
+  }
 });
 
 test('release names flag embedded Greek subs without probing the file', () => {
-  assert.equal(filenameGreekHint({ title: 'Forrest Gump (with Greek subs)' }), true);
-  assert.equal(filenameGreekHint({ filename: 'Movie.2024.1080p.WEB-DL.GRE.mkv' }), true);
-  assert.equal(filenameGreekHint({ filename: 'Movie.2024.1080p.WEB-DL.GR.mkv' }), true);
-  assert.equal(filenameGreekHint({ description: 'Movie release\n🌐 Multi Subs|🇬🇷' }), true);
-  assert.equal(filenameGreekHint({ filename: 'Movie.2024.Greek.Subs.mkv' }), true);
-  assert.equal(filenameGreekHint({ filename: 'Show.S02E03.1080p.YTS.AG.mp4' }), false);
-  assert.equal(filenameGreekHint({ title: 'El.origen.2010.WEB-DL.1080p-Dual-Lat' }), false);
-  assert.equal(filenameGreekHint({ filename: 'Matrix.1999.1080p.ΕλληνικήΜεταγλώττιση.DubbedGreek' }), false);
-  assert.equal(filenameGreekHint({ filename: 'Movie.2024.1080p.Multi-Subs.mkv' }), false);
+  assert.deepEqual(filenameLanguageHints({ title: 'Forrest Gump (with Greek subs)' }), ['el']);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Movie.2024.1080p.WEB-DL.GRE.mkv' }), ['el']);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Movie.2024.1080p.WEB-DL.GR.mkv' }), ['el']);
+  assert.deepEqual(filenameLanguageHints({ description: 'Movie release\n🌐 Multi Subs|🇬🇷' }), ['el']);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Movie.2024.Greek.Subs.mkv' }), ['el']);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Show.S02E03.1080p.YTS.AG.mp4' }), []);
+  assert.deepEqual(filenameLanguageHints({ title: 'El.origen.2010.WEB-DL.1080p-Dual-Lat' }), []);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Matrix.1999.1080p.ΕλληνικήΜεταγλώττιση.DubbedGreek' }), []);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Movie.2024.1080p.Multi-Subs.mkv' }), []);
+});
+
+test('release names flag other languages the same way', () => {
+  assert.deepEqual(filenameLanguageHints({ filename: 'Movie.2024.1080p.WEB-DL.FRENCH.mkv' }), ['fr']);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Movie.2024.Spanish.Subs.mkv' }), ['es']);
+  assert.deepEqual(filenameLanguageHints({ description: 'Multi Subs|🇬🇷🇫🇷' }).sort(), ['el', 'fr']);
+  assert.deepEqual(filenameLanguageHints({ filename: 'Movie.2024.Dubbed.Spanish.mkv' }), []);
 });
 
 function rangedFetcher(file) {
@@ -120,8 +144,8 @@ test('probes the file once per URL and reads its subtitle languages', async () =
   const { fetcher, calls } = rangedFetcher(mkv(mkvTrack(0x11, 'gre')));
   const probe = createEmbeddedProbe({ fetcher });
   const stream = { url: 'https://files.example/movie.mkv' };
-  assert.equal(await probe(stream), true);
-  assert.equal(await probe({ url: 'https://files.example/movie.mkv' }), true);
+  assert.deepEqual(await probe(stream), ['el']);
+  assert.deepEqual(await probe({ url: 'https://files.example/movie.mkv' }), ['el']);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].options.headers.Range, 'bytes=0-65535');
   assert.equal(await probe({}), undefined);
@@ -137,7 +161,7 @@ test('probes MP4 files whose moov sits at the end', async () => {
   const tail = box('moov', mp4Trak('gre', 'sbtl'));
   const { fetcher, calls } = rangedFetcher(Buffer.concat([head, Buffer.alloc(5_000_000), tail]));
   const probe = createEmbeddedProbe({ fetcher });
-  assert.equal(await probe({ url: 'https://files.example/movie.mp4' }), true);
+  assert.deepEqual(await probe({ url: 'https://files.example/movie.mp4' }), ['el']);
   assert.equal(calls.length, 2);
   assert.equal(calls[1].options.headers.Range, 'bytes=-524288');
 });
@@ -156,10 +180,10 @@ test('reads embedded subtitles through a shared media CDN redirect', async () =>
     return calls.length === 1 ? redirect : range;
   });
   const probe = createEmbeddedProbe({ fetcher });
-  assert.equal(await probe({
+  assert.deepEqual(await probe({
     url: 'https://source.example/video.mkv',
     behaviorHints: { proxyHeaders: { request: { Authorization: 'Bearer fixture' } } }
-  }), true);
+  }), ['el']);
   assert.deepEqual(calls, [
     ['source.example', { range: 'bytes=0-65535', authorization: 'Bearer fixture' }],
     ['cdn.example', { range: 'bytes=0-65535' }]
@@ -183,7 +207,7 @@ test('a failed probe is retried instead of cached as unknown', async () => {
   } });
   const stream = { url: 'https://files.example/movie.mkv' };
   assert.equal(await probe(stream), undefined);
-  assert.equal(await probe(stream), true);
+  assert.deepEqual(await probe(stream), ['el']);
   assert.equal(failures, 2);
 });
 
@@ -198,12 +222,12 @@ test('probe answers survive a restart through the on-disk cache', async (t) => {
   const file = join(directory, '.probe-cache.json');
   const { fetcher, calls } = rangedFetcher(mkv(mkvTrack(0x11, 'gre')));
   const probe = createEmbeddedProbe({ fetcher, cache: openProbeCache(file) });
-  assert.equal(await probe({ url: 'https://files.example/movie.mkv' }), true);
+  assert.deepEqual(await probe({ url: 'https://files.example/movie.mkv' }), ['el']);
   await new Promise((resolve) => setTimeout(resolve, 300));
   const saved = JSON.parse(await readFile(file, 'utf8'));
-  assert.equal(saved['https://files.example/movie.mkv'].value, true);
+  assert.deepEqual(saved['https://files.example/movie.mkv'].value, ['el']);
 
   const restarted = createEmbeddedProbe({ fetcher, cache: openProbeCache(file) });
-  assert.equal(await restarted({ url: 'https://files.example/movie.mkv' }), true);
+  assert.deepEqual(await restarted({ url: 'https://files.example/movie.mkv' }), ['el']);
   assert.equal(calls.length, 1);
 });
