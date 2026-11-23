@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="#install-in-stremio">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="#languages">Languages</a> ·
   <a href="#run-on-a-mac">Run on a Mac</a> ·
@@ -28,10 +29,16 @@
 
 Subs Match sits between your stream add-on and Stremio. It ranks playable streams by how well the available subtitles match each release — and it marks the streams that already carry subtitles inside the video file.
 
+## Install in Stremio
+
+For a new hosted installation, add a stream add-on manifest and at least one subtitle provider API key, choose your languages, and set a configuration password. Select **Continue to install**, then **Install in Stremio**. In Stremio Web, you can also use **Copy install link** and paste it into **Addons → Add addon**. [Hosted Configure page](https://subsmatch.johncodeos.com/configure)
+
+**Upgrading from Greek Sub Match.** Subs Match v0.4.0 uses a new Stremio add-on ID. If **Addons → Installed** still shows **Greek Sub Match**, open **Configure** on that entry and unlock your existing settings. Use its install link to add **Subs Match**. Once **Subs Match** appears in Stremio, uninstall **Greek Sub Match** to avoid duplicate streams. Reusing your existing installation preserves your stream sources, keys, and saved subtitle timings.
+
 ## Features
 
 - **Release matching** — pairs subtitle release names with the streams of the same movie or episode. Saved timing confirmations and video hash matches rank first, then exact filenames, then likely releases. Shared listings such as `1080/720p YTS.AG` are understood, and each source, resolution, and release group is kept apart.
-- **Embedded-sub detection** — reads the video container's own track metadata (Matroska or MP4) over a small ranged request and marks streams that already include subtitles in your languages with `Embedded`. Those streams join the shortlist even when no subtitle file matched. Release-name signals such as `GRE`, `Greek subs`, `FRENCH`, or flag emojis are used as a fallback. *Dubbed audio* never counts as subtitles.
+- **Embedded-sub detection** checks Matroska or MP4 track metadata over small ranged requests for up to 16 eligible streams per lookup. Release names can also provide hints, such as `GRE`, `Greek subs`, or `FRENCH`. Streams marked `Embedded` can join the shortlist on the strength of their built-in subtitles.
 - **Matched shortlist** — up to 12 best streams per title, identical playback URLs collapsed into one.
 - **Timing confirmations** — after checking playback once, save a delay for that exact file so the subtitles stay in sync every time.
 - **Subtitle providers** — SubDL, OpenSubtitles, and SubSource, with SRT delivered as UTF-8 WebVTT (ZIP packs included).
@@ -52,7 +59,7 @@ Greek release-name tuning (`GRE`, `GR`, `Ελληνικά`…) is the deepest; t
 
 ## Run on a Mac
 
-1. Double-click **`Start.command`** and leave its Terminal window open. (Needs Node.js 22 or later — the copy bundled with ChatGPT on this Mac works.)
+1. Double-click **`Start.command`** and leave its Terminal window open. You need Node.js 22 or later. The launcher can also use the Node.js bundled with ChatGPT when available.
 2. Open **`http://127.0.0.1:7331/configure`** — or double-click `Configure.command`.
 3. Paste the install link of a Stremio add-on that supplies playable streams — from **Addons → Installed → Share addon**, or its own setup page. It looks like `https://example.com/manifest.json`. A second source fits in the optional field below.
 4. Enter at least one subtitle API key, check the subtitle languages you want, set a configuration password, and press **Save settings**.
@@ -62,7 +69,7 @@ Get API keys here: [SubDL](https://subdl.com/api-doc) · [OpenSubtitles](https:/
 
 **Good to know**
 
-- If Stremio Web cannot reach the local add-on, allow the Chrome **Apps on device** permission for the site.
+- If Stremio Web cannot reach the local add-on in Chrome or Brave, allow **Apps on device** for `web.stremio.com` in that browser's site settings.
 - After changing settings, refresh the movie or episode to see new results. The install link stays the same when settings or the password change.
 - Saved stream links go in multiline boxes, one link per box. The eye button next to each API key reveals or hides it.
 - Settings live in `.settings.json` with owner-only permissions. If you forget the configuration password, open the loopback Configure page on the host to set a new one.
@@ -106,7 +113,7 @@ Run one instance per owner. The private install link grants Stremio access; the 
 
 5. **Install** with **Install in Stremio** or **Copy install link**. Check that the generated HTTPS manifest loads — and that the bare `/manifest.json` and `/configure` return `404`, while the installed add-on's **Configure** button opens the password prompt.
 
-**Keep private** — the generated install URL contains a random access token that grants access to your streams. Keep it out of public posts, GitHub, and shared logs, and keep proxy logs free of it. Store `.env`, `.settings.json`, `.confirmations.json`, `.probe-cache.json`, and `.installations/` on the VPS and in private backups only. [GitHub ignored files](https://docs.github.com/en/get-started/git-basics/ignoring-files)
+**Keep credentials private.** Anyone with a private install link can fetch its stream results. Keep install links, source manifests, and provider keys out of public posts and Git history. Limit access to application and proxy logs and redact install tokens before sharing logs. Store `.env`, `.settings.json`, `.confirmations.json`, `.probe-cache.json`, and `.installations/` on the VPS and in private backups. [GitHub guidance on storing secrets](https://docs.github.com/en/get-started/learning-to-code/storing-your-secrets-safely)
 
 ## Shared Configure page
 
@@ -158,7 +165,7 @@ All providers serve SRT as UTF-8 WebVTT. If one provider is unavailable, the oth
 
 ## Development
 
-Run `node --test` from this folder with Node.js 22 or later. The tests cover local settings, stream ranking, ZIP episode selection, embedded-subtitle detection, multi-language matching, and simulated subtitle API search and downloads.
+Run `node --test` from this folder with Node.js 22 or later. The ZIP tests use `/usr/bin/zip` to create fixtures and `/usr/bin/unzip` to read them. The suite covers local settings, stream ranking, ZIP episode selection, embedded-subtitle detection, multi-language matching, and simulated subtitle API search and downloads.
 
 ## License
 
