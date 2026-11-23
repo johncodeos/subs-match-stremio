@@ -241,13 +241,12 @@ export function filenameLanguageHints(stream) {
     .filter((value) => typeof value === 'string');
   const firstLines = values.map((value) => value.split(/\r?\n/)[0].replace(extension, ''));
   const text = values.join('\n');
+  const subtitleContext = subsContext.test(text);
+  if (!subtitleContext && dubContext.test(text)) return [];
   return languageCodes.filter((code) => {
     const profile = languages[code];
-    const explicit = profile.explicit.test(text) || firstLines.some((line) => profile.trailing.test(line));
-    const flagged = profile.flags.some((flag) => text.includes(flag)) && subsContext.test(text);
-    if (!explicit && !flagged) return false;
-    if (dubContext.test(text) && !subsContext.test(text)) return false;
-    return true;
+    return profile.explicit.test(text) || firstLines.some((line) => profile.trailing.test(line))
+      || (subtitleContext && profile.flags.some((flag) => text.includes(flag)));
   });
 }
 

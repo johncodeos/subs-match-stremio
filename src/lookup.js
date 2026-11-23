@@ -2,7 +2,7 @@ import { fileIdentity, playbackIdentity } from './confirmations.js';
 import { createEmbeddedProbe, filenameLanguageHints } from './embedded.js';
 import { cached, fetchJson } from './http.js';
 import { namesFor } from './languages.js';
-import { bestMatch, parseVideoId, videoFilenames, videoHash } from './match.js';
+import { createStreamMatcher, parseVideoId, videoFilenames, videoHash } from './match.js';
 
 export const shortlistLimit = 12;
 const probeBudget = 16;
@@ -27,12 +27,14 @@ async function probeStreams(streams, probe, languages) {
     candidates.push(stream);
     if (candidates.length >= probeBudget) break;
   }
-  for (let index = 0; index < candidates.length; index += probeConcurrency) {
-    await Promise.all(candidates.slice(index, index + probeConcurrency).map(async (stream) => {
+  const queue = candidates.values();
+  const worker = async () => {
+    for (const stream of queue) {
       const value = await probe(stream);
       if (value !== undefined) results.set(stream.url, value);
-    }));
-  }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(probeConcurrency, candidates.length) }, worker));
   return results;
 }
 
@@ -52,21 +54,26 @@ function upstreamStreamUrl(manifestUrl, type, id) {
 }
 
 function rankedRows(streams, sets, video, confirmations) {
+  const grouped = sets.map(({ provider, candidates }) => {
+    const byLang = new Map();
+    for (const candidate of candidates) {
+      const group = byLang.get(candidate.lang) ?? [];
+      group.push(candidate);
+      byLang.set(candidate.lang, group);
+    }
+    return { provider, groups: [...byLang.values()] };
+  });
   const rows = streams.map((stream) => {
     const fileKey = confirmations && fileIdentity(stream, video);
     const confirmed = fileKey && confirmations.get(fileKey);
-    const matches = sets.flatMap(({ provider, candidates }) => {
+    let matchStream;
+    const matches = grouped.flatMap(({ provider, groups }) => {
       if (confirmed?.provider === provider.id) {
         return [{ provider, score: 4, release: confirmed.release, lang: confirmed.lang ?? 'el', selection: confirmed }];
       }
-      const byLang = new Map();
-      for (const candidate of candidates) {
-        const group = byLang.get(candidate.lang) ?? [];
-        group.push(candidate);
-        byLang.set(candidate.lang, group);
-      }
-      return [...byLang.values()].flatMap((group) => {
-        const match = bestMatch(stream, group, video);
+      return groups.flatMap((group) => {
+        matchStream ??= createStreamMatcher(stream, video);
+        const match = matchStream(group);
         return match ? [{ ...match, provider }] : [];
       });
     }).sort((a, b) => b.score - a.score);

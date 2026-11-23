@@ -97,20 +97,23 @@ export function videoFilenames(stream) {
   return [...lines, lines.join(' ')].slice(-12).map((line) => line.slice(0, 700));
 }
 
+function commonValue(left, right) {
+  for (const value of left) if (right.has(value)) return value;
+}
+
 function compatible(video, subtitle) {
   if (video.cut !== subtitle.cut && (video.cut || subtitle.cut)) return false;
   if (video.source && subtitle.source && video.source !== subtitle.source) return false;
   if (Math.abs(video.fps - subtitle.fps) > 0.05) return false;
   return !video.resolutions.size || !subtitle.resolutions.size
-    || [...video.resolutions].some((resolution) => subtitle.resolutions.has(resolution));
+    || Boolean(commonValue(video.resolutions, subtitle.resolutions));
 }
 
 function releaseEvidence(video, subtitle) {
   if (!compatible(video, subtitle)) return null;
-  const sharedResolution = [...video.resolutions].some((resolution) => subtitle.resolutions.has(resolution));
   if (video.hasTitle && video.canonical === subtitle.canonical) return { score: 2 };
-  const sharedGroup = [...video.groups].find((group) => subtitle.groups.has(group));
-  if (sharedGroup && (sharedResolution || (video.source && video.source === subtitle.source))) {
+  const sharedGroup = commonValue(video.groups, subtitle.groups);
+  if (sharedGroup && ((video.source && video.source === subtitle.source) || commonValue(video.resolutions, subtitle.resolutions))) {
     return { score: 1, group: sharedGroup, source: subtitle.source ?? video.source };
   }
   return null;
@@ -138,31 +141,37 @@ export function videoHash(stream) {
   return typeof value === 'string' && /^[a-f0-9]{16}$/i.test(value) ? value.toLowerCase() : undefined;
 }
 
-export function bestMatch(stream, subtitles, video) {
+export function createStreamMatcher(stream, video) {
   const filenames = videoFilenames(stream);
   if (video.type === 'series' && filenames.some((name) => {
     const episode = parseEpisode(name);
     return episode && !episodeMatches(episode, video);
-  })) return null;
+  })) return () => null;
 
   const releases = filenames.map(describe);
   const context = releases.at(-1);
-  let best = null;
   const hash = videoHash(stream);
-  for (const subtitle of subtitles) {
-    if (subtitle.videoHash) {
-      if (hash === subtitle.videoHash) return { subtitle, score: 3, release: subtitle.releases[0], lang: subtitle.lang };
-      continue;
-    }
-    for (const { release, description } of describeCandidate(subtitle)) {
-      if (context && !compatible(context, description)) continue;
-      for (const variant of releases) {
-        const evidence = releaseEvidence(variant, description);
-        if (evidence && evidence.score > (best?.score ?? 0)) best = { subtitle, release, lang: subtitle.lang, ...evidence };
+  return (subtitles) => {
+    let best = null;
+    for (const subtitle of subtitles) {
+      if (subtitle.videoHash) {
+        if (hash === subtitle.videoHash) return { subtitle, score: 3, release: subtitle.releases[0], lang: subtitle.lang };
+        continue;
+      }
+      for (const { release, description } of describeCandidate(subtitle)) {
+        if (context && !compatible(context, description)) continue;
+        for (const variant of releases) {
+          const evidence = releaseEvidence(variant, description);
+          if (evidence && evidence.score > (best?.score ?? 0)) best = { subtitle, release, lang: subtitle.lang, ...evidence };
+        }
       }
     }
-  }
-  return best;
+    return best;
+  };
+}
+
+export function bestMatch(stream, subtitles, video) {
+  return createStreamMatcher(stream, video)(subtitles);
 }
 
 export const matchLabels = {

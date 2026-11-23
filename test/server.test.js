@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { createLookup } from '../src/lookup.js';
 import { createAddon, readConfig } from '../src/server.js';
 
 const video = '/stream/series/tt1234567:2:3.json';
@@ -355,6 +356,45 @@ test('a filename hint does not hide additional embedded subtitle languages', asy
   const { streams } = await (await get(video)).json();
   assert.equal(streams.length, 1);
   assert.match(streams[0].description, /(?:^|\n)🇬🇷🇫🇷 Embedded$/);
+});
+
+test('container probes reuse free slots while preserving the probe limit and order', async () => {
+  const streams = Array.from({ length: 17 }, (_, index) => ({ ...source, url: `https://streams.example/probe-${index}.mp4` }));
+  const firstStarted = Promise.withResolvers();
+  const releaseFirst = Promise.withResolvers();
+  const started = [];
+  let active = 0;
+  let peak = 0;
+  const lookup = createLookup({
+    config: { manifestUrls: [apiManifest], languages: ['el'] },
+    providers: [{ id: 'fixture', search: async () => [] }],
+    fetcher: async () => Response.json({ streams }),
+    logger: console,
+    probe: async (stream) => {
+      started.push(stream.url);
+      peak = Math.max(peak, ++active);
+      if (stream.url === streams[0].url) {
+        firstStarted.resolve();
+        await releaseFirst.promise;
+      } else {
+        await Promise.resolve();
+      }
+      active -= 1;
+      return ['el'];
+    }
+  });
+
+  const result = lookup('series', 'tt1234567:2:3');
+  try {
+    await firstStarted.promise;
+    await new Promise(setImmediate);
+    assert.deepEqual(started, streams.slice(0, 16).map(({ url }) => url));
+    assert.equal(peak, 6);
+  } finally {
+    releaseFirst.resolve();
+  }
+  const report = await result;
+  assert.deepEqual(report.matchedRows.map(({ stream }) => stream.url), started);
 });
 
 test('SubSource finds Greek movie releases and serves the selected episode from its own archive', async (t) => {
