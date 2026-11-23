@@ -17,6 +17,7 @@
 
 <p align="center">
   <a href="#install-in-stremio">Install</a> ·
+  <a href="#screenshots">Screenshots</a> ·
   <a href="#features">Features</a> ·
   <a href="#languages">Languages</a> ·
   <a href="#run-on-a-mac">Run on a Mac</a> ·
@@ -34,6 +35,24 @@ Subs Match sits between your stream add-on and Stremio. It ranks playable stream
 For a new hosted installation, add a stream add-on manifest and at least one subtitle provider API key, choose your languages, and set a configuration password. Select **Continue to install**, then **Install in Stremio**. In Stremio Web, you can also use **Copy install link** and paste it into **Addons → Add addon**. [Hosted Configure page](https://subsmatch.johncodeos.com/configure)
 
 **Upgrading from Greek Sub Match.** Subs Match v0.4.0 uses a new Stremio add-on ID. If **Addons → Installed** still shows **Greek Sub Match**, open **Configure** on that entry and unlock your existing settings. Use its install link to add **Subs Match**. Once **Subs Match** appears in Stremio, uninstall **Greek Sub Match** to avoid duplicate streams. Reusing your existing installation preserves your stream sources, keys, and saved subtitle timings.
+
+### Show Subs Match first
+
+To put the **Subs Match** results at the top of the stream list, move **Subs Match** above the add-ons that supply your streams, such as Debridio or Torrentio.
+
+1. Open a third-party add-on manager and sign in with the same Stremio account. [CineBye](https://cinebye.elfhosted.com/)
+2. Drag **Subs Match** above your stream provider add-ons and sync the new order to your account.
+3. Reload Stremio Web and reopen the movie or episode.
+
+## Screenshots
+
+### Configure
+
+<img src="assets/configure-screenshot.jpg" width="540" alt="Subs Match Configure page with the stream source field, all 12 language options, the provider picker, and the Continue to install button">
+
+### Stremio Web results
+
+![The Matrix in Stremio Web showing loaded Subs Match results with English and Greek Exact match labels](assets/stremio-web-screenshot.jpg)
 
 ## Features
 
