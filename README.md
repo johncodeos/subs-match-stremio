@@ -43,10 +43,10 @@ Pick one or more subtitle languages in Configure. Matching, embedded detection, 
 
 | Code | Language | Code | Language | Code | Language |
 | --- | --- | --- | --- | --- | --- |
-| `el` | Greek | `fr` | French | `pl` | Polish |
-| `en` | English | `de` | German | `ru` | Russian |
-| `es` | Spanish | `it` | Italian | `tr` | Turkish |
-| `pt` | Portuguese | `ro` | Romanian | `ar` | Arabic |
+| `en` | English | `ru` | Russian | `it` | Italian |
+| `pt` | Portuguese | `es` | Spanish | `fr` | French |
+| `de` | German | `pl` | Polish | `ro` | Romanian |
+| `el` | Greek | `tr` | Turkish | `ar` | Arabic |
 
 Greek release-name tuning (`GRE`, `GR`, `Ελληνικά`…) is the deepest; the others follow their own release-name markers and native subtitle words. Portuguese also accepts Brazilian release forms (`PT-BR`, `BR`, `Brazilian`). Each subtitle is converted using its own language's legacy encoding — windows-1253 for Greek, windows-1251 for Russian, windows-1250 for Polish and Romanian, and so on — when it is not UTF-8.
 
