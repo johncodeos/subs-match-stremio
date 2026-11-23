@@ -494,6 +494,11 @@ function redirect(res, location) {
   res.end();
 }
 
+function unlockDestination(id) {
+  const target = parseCheckTarget(id);
+  return target ? `/configure/check?${new URLSearchParams({ id: target.id })}` : '/configure';
+}
+
 export function createConfigureHandler(store, logger, tools) {
   const localCsrf = randomBytes(24).toString('base64url');
   const loginCsrf = randomBytes(24).toString('base64url');
@@ -568,8 +573,7 @@ export function createConfigureHandler(store, logger, tools) {
           return writePage(res, 401, unlockPage(basePath, loginCsrf, { id, error: 'Incorrect password.' }));
         }
         attempts = 0;
-        const target = id && parseCheckTarget(id);
-        return startSession(res, installedUrl, target ? `/configure/check?${new URLSearchParams({ id: target.id })}` : '/configure');
+        return startSession(res, installedUrl, unlockDestination(id));
       } catch (error) {
         if (!(error instanceof InvalidSettings)) logger.warn('Could not unlock Configure.');
         return writePage(res, error instanceof InvalidSettings ? 400 : 500, unlockPage(basePath, loginCsrf,
@@ -600,6 +604,12 @@ export function createConfigureHandler(store, logger, tools) {
     let timingItem;
     try {
       const form = await readForm(req);
+      if (installedUrl && url.pathname === '/configure' && form.get('login') === '1') {
+        if (form.get('csrf') !== loginCsrf) return writePage(res, 403, 'Reload the settings page and try again.');
+        // A cross-site link can omit the Strict cookie that the same-site form submission sends.
+        const id = (form.get('id') ?? '').slice(0, 350);
+        return redirect(res, `${basePath}${unlockDestination(id)}`);
+      }
       if (form.get('csrf') !== csrf) return writePage(res, 403, 'Reload the settings page and try again.');
 
       if (loggingOut) {

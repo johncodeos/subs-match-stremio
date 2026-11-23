@@ -444,6 +444,27 @@ test('public Configure creates separate installations with independent settings 
   const a = await register('first');
   const b = await register('second');
   assert.notEqual(a.token, b.token);
+
+  // The cross-site Configure link omits the Strict cookie, then the same-site form includes it.
+  const stremioEntry = await (await remote(b.configure)).text();
+  assert.match(stremioEntry, /Unlock Configure/);
+  const unlockWithSession = {
+    login: '1', csrf: csrfFrom(stremioEntry), unlock_password: b.password, STREAM_LIST: 'all'
+  };
+  const resumed = await post(b.configure, unlockWithSession, b.cookie);
+  assert.equal(resumed.status, 303);
+  assert.equal(resumed.headers.get('location'), b.configure);
+  assert.equal(resumed.headers.get('set-cookie'), null);
+  assert.equal((await profiles.get(b.token)).settings.get().shortlist, true);
+  assert.equal((await post(b.configure, { ...unlockWithSession, csrf: 'invalid' }, b.cookie)).status, 403);
+
+  const titleId = 'tt1234567';
+  const lockedCheck = await (await remote(`${b.configure}/check?id=${titleId}`)).text();
+  assert.match(lockedCheck, /Unlock Configure/);
+  const resumedCheck = await post(b.configure, { ...unlockWithSession, csrf: csrfFrom(lockedCheck), id: titleId }, b.cookie);
+  assert.equal(resumedCheck.status, 303);
+  assert.equal(resumedCheck.headers.get('location'), `${b.configure}/check?id=${titleId}`);
+
   const locked = await (await remote(b.configure, { headers: { Cookie: a.cookie } })).text();
   assert.match(locked, /Unlock Configure/);
   assert.doesNotMatch(locked, /first\.example|second\.example/);
