@@ -2,13 +2,15 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { parseOffset } from './confirmations.js';
 import { installPath, validPassword, verifyInstallationPassword } from './installation.js';
-import { languageCodes, languages, flagsFor, namesFor } from './languages.js';
+import { languages, flagsFor, namesFor } from './languages.js';
 import { diagnosticsName, emptyResult, shortlistLimit, subtitleSelection } from './lookup.js';
 import { matchReason, parseVideoId, streamMatchDescription } from './match.js';
 import { InvalidSettings, fields, isLive, matchLabelPositions, setupRequirements } from './settings.js';
 
 const maxFormSize = 32 * 1024;
 const fieldsScript = readFileSync(new URL('./configure-fields.js', import.meta.url));
+// Put English first, then follow Torrentio's Priority Language order.
+const configureLanguageOrder = ['en', 'ru', 'it', 'pt', 'es', 'fr', 'de', 'pl', 'ro', 'el', 'tr', 'ar'];
 
 function matchExamples(lang) {
   return Object.fromEntries(Object.keys(matchLabelPositions).map((position) => [
@@ -219,7 +221,7 @@ ${installSection(config, { ready: true, basePath })}`, basePath);
 
 function languageField(selected) {
   return `<div class="language-grid" role="group" aria-labelledby="languages-label">
-    ${languageCodes.map((code) => {
+    ${configureLanguageOrder.map((code) => {
       const profile = languages[code];
       return `<label class="language-option"><input type="checkbox" name="LANGUAGES" value="${code}"${selected.includes(code) ? ' checked' : ''}>
         <span class="language-flag" aria-hidden="true">${profile.flag}</span><span>${profile.name}</span></label>`;

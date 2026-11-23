@@ -85,6 +85,8 @@ test('local settings are saved privately, applied in place, and survive a restar
   assert.match(html, /data-saved="true" placeholder="••••••••••••"/);
   assert.match(html, /aria-label="Show SubDL API key"/);
   assert.doesNotMatch(html, /legacy-subdl-secret/);
+  assert.deepEqual([...html.matchAll(/type="checkbox" name="LANGUAGES" value="([a-z]{2})"/g)].map((match) => match[1]),
+    ['en', 'ru', 'it', 'pt', 'es', 'fr', 'de', 'pl', 'ro', 'el', 'tr', 'ar']);
   assert.match(html, /<input type="checkbox" name="LANGUAGES" value="el" checked>/);
   assert.match(page.headers.get('Content-Security-Policy'), /script-src 'self'; connect-src 'self'/);
   const script = await fetch(origin + '/configure/fields.js');
